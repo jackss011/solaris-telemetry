@@ -1,0 +1,199 @@
+package main
+
+import "core:os"
+import "core:strings"
+import "core:fmt"
+import rl "vendor:raylib"
+
+
+TokenState :: enum {
+    NONE,
+    IDENT,
+    STR,
+    INT,
+    FLOAT,
+    COMMENT,
+}
+
+is_ascii_letter :: proc(b: u8) -> bool {
+    return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b == '_')
+}
+
+parse_config_file :: proc(filepath: string) {
+    data, err := os.read_entire_file(filepath, context.allocator)
+	if err != nil {
+		// could not read file
+        fmt.println("failed to load file")
+		return
+	}
+	defer delete(data, context.allocator)
+
+    text := string(data)
+
+    // token state
+    token_state := TokenState.NONE
+    token_idx := 0
+    escaping := false
+
+    for i := 0; i < len(text); i += 1 {
+        b := text[i] // Yields u8
+        
+        switch token_state {
+            case TokenState.NONE:
+                assert(!escaping)
+
+                switch b {
+                    case '"':
+                        token_state = TokenState.STR
+                    case '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+                        token_state = TokenState.INT
+                    case '.':
+                        token_state = TokenState.FLOAT
+                    case '\t', '\v', '\f', '\n', '\r', ' ':
+                        token_state = TokenState.NONE
+                    case '#':
+                        token_state = TokenState.COMMENT
+                    case:
+                        // fmt.println("hello", b)
+                        token_state = TokenState.IDENT
+                }
+
+                token_idx = i
+
+            case TokenState.IDENT:
+                assert(!escaping)
+                assert(i >= 1)
+
+                switch b {
+                    case ' ', '\t', '\v', '\f', '\n', '\r':
+                        fmt.println("ident(%s)", text[token_idx:i])
+                        token_state = TokenState.NONE
+
+                    case '"':
+                        fmt.println("ident(%s)", text[token_idx:i])
+                        token_state = TokenState.STR
+                        token_idx = i
+                    case '#':
+                        fmt.println("ident(%s)", text[token_idx:i])
+                        token_state = TokenState.COMMENT
+                        token_idx = i
+                    // allow . ands number
+                }
+
+            case TokenState.STR:
+                assert(i >= 1)
+                switch b {
+                    case '\t', '\v', '\f':
+                        fmt.println("ERROR: character not allowed inside of string")
+                        return;
+                    case '\n', '\r':
+                        fmt.println("ERROR: string was not completed") // no multiline string
+                        return
+                    case '"':
+                        fmt.println("string(%s)", text[token_idx:i+1])
+                        token_state = TokenState.NONE
+                }
+            
+            case TokenState.INT:
+                assert(i >= 1)
+                switch b {
+                    case '\t', '\v', '\f', '\n', '\r', ' ':
+                        fmt.println("num(%s)", text[token_idx:i])
+                        token_state = TokenState.NONE
+                    case '.', 'e':
+                        token_state = TokenState.FLOAT // convert to float
+                    case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+                        token_state = TokenState.INT // nominal
+                    case '"':
+                        fmt.println("num(%s)", text[token_idx:i])
+                        token_state = TokenState.STR
+                        token_idx = i
+                    case '#':
+                        fmt.println("num(%s)", text[token_idx:i])
+                        token_state = TokenState.COMMENT
+                        token_idx = i
+                    case:
+                        if is_ascii_letter(b) {
+                            fmt.println("ERROR: character %c not allowed in float", b) // no multiline string
+                            return
+                        } else {
+                            fmt.println("float(%s)", text[token_idx:i])
+                            token_state = TokenState.IDENT
+                            token_idx = i
+                        }
+                }
+
+            case TokenState.FLOAT:
+                assert(i >= 1)
+                switch b {
+                    case '\t', '\v', '\f', '\n', '\r', ' ':
+                        fmt.println("float(%s)", text[token_idx:i])
+                        token_state = TokenState.NONE
+                    case '.', 'e', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+                        token_state = TokenState.FLOAT // nominal
+                    case '"':
+                        fmt.println("float(%s)", text[token_idx:i])
+                        token_state = TokenState.STR
+                        token_idx = i
+                    case '#':
+                        fmt.println("float(%s)", text[token_idx:i])
+                        token_state = TokenState.COMMENT
+                        token_idx = i
+                    case:
+                        if is_ascii_letter(b) {
+                            fmt.println("ERROR: character %c not allowed in float", b) // no multiline string
+                            return
+                        } else {
+                            fmt.println("float(%s)", text[token_idx:i])
+                            token_state = TokenState.IDENT
+                            token_idx = i
+                        }
+                }
+
+            case TokenState.COMMENT:
+                assert(i >= 1)
+                switch b {
+                    case '\n', '\r':
+                        fmt.println("comment(%s)", text[token_idx:i])
+                        token_state = TokenState.NONE
+                }
+        }
+    }
+}
+
+main :: proc() {
+    fmt.println("Hello basic parse example!")
+    parse_config_file("examples/simple_tlm/tlm.txt")
+}
+
+// main :: proc() {
+//     rl.InitWindow(1280, 720, "Telemetry Viewer")
+//     defer rl.CloseWindow()
+//     rl.SetTargetFPS(60)
+
+//     for !rl.WindowShouldClose() {
+//         rl.BeginDrawing()
+//         defer rl.EndDrawing()
+
+//         rl.ClearBackground(rl.Color{15, 15, 20, 255})
+
+//         // Rounded transparent panel
+//         rl.DrawRectangleRounded(
+//             rl.Rectangle{40, 40, 300, 150},
+//             0.15,   // roundness
+//             8,      // segments
+//             rl.Color{30, 30, 35, 160}, // fill, translucent
+//         )
+//         rl.DrawRectangleRoundedLinesEx(
+//             rl.Rectangle{40, 40, 300, 150},
+//             0.15, 8, 1.5,
+//             rl.Color{255, 255, 255, 60}, // border
+//         )
+
+//         // Text and values drawn straight on top
+//         rl.DrawText("VOLTAGE", 60, 60, 18, rl.WHITE)
+//         rl.DrawText("28.4 V", 60, 90, 32, rl.GREEN)
+
+//         rl.DrawFPS(10, 10)
+//     }
+// }
