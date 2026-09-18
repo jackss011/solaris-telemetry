@@ -41,15 +41,19 @@ defined yet — no test suite, no CI config, no formatter config exist in this r
 - `bin/odin/` — local, gitignored home for the downloaded Odin compiler. Only `README.md`
   inside it is tracked.
 
+## Documentation
+
+Deeper reference material (beyond this quick-orientation file) lives in `docs/` —
+see `docs/README.md` for the index. Notably `docs/cosmos-overview.md` explains how the real
+COSMOS system this project is inspired by works, functionally and in software, which is
+useful background before extending the telemetry-definition parser.
+
 ## Known issues / gotchas
 
-- `fmt.println` in Odin does **not** do printf-style `%s`/`%c` substitution the way `fmt.printf`
-  does — calls like `fmt.println("ident(%s)", text[token_idx:i])` in `parse_config_file` print
-  the literal format string and the value as separate arguments, not an interpolated string.
-  If you touch the parser, prefer `fmt.printf`/`fmt.println` used correctly, or `fmt.tprintf`.
-- There are two near-duplicate README files at repo root: `README.md` (tracked, has the real
-  project title) and `REAME.md` (typo'd filename, currently empty). Don't assume `REAME.md` is
-  meaningful — it looks like an accidental artifact. Flag it to the user before deleting it.
+- Odin's `fmt.println` does **not** do printf-style `%s`/`%c` substitution the way
+  `fmt.printf`/`fmt.printfln` do. `parse_config_file` was fixed to use `fmt.printfln` for this
+  reason — if you add more token-printing calls, use `fmt.printfln`, not `fmt.println`, when
+  interpolating values.
 - No tests exist yet. If you add parser logic, consider whether Odin's built-in `testing`
   package is appropriate before introducing a different test approach.
 
