@@ -9,7 +9,8 @@ COSMOS's own, or a future Solaris server of its own. v4 only; sources at the bot
 
 - Plain **HTTP**, POST to the CmdTlmServer's API port (default `7777`).
 - Body is **a relaxed JSON-RPC 2.0** request: `{"jsonrpc": "2.0", "method": "...", "params": [...], "id": N}`.
-  Relaxations vs. strict JSON-RPC 2.0:
+  See [`json-rpc.md`](./json-rpc.md) for the actual spec this is relaxing. Relaxations vs.
+  strict JSON-RPC 2.0:
   - Requests with a `null` id aren't supported (every call expects a real response).
   - Non-standard JSON number literals (`NaN`, `Infinity`, `-Infinity`) are allowed, since
     telemetry legitimately produces these (e.g. a float conversion dividing by zero).
