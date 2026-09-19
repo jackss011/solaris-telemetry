@@ -46,19 +46,33 @@ Two ways a target gets into the system, configured in `config/system/system.txt`
 - `DECLARE_GEM_TARGET` / `DECLARE_GEM_MULTI_TARGET` — same idea, but for targets shipped as a
   Ruby gem instead of a local folder.
 
-## `system.txt` keywords worth knowing
+## `system.txt` keywords
 
-| Keyword | Purpose |
-|---|---|
-| `PORT NAME PORT#` | Sets a named server port, e.g. `PORT CTS_API 7777`, `PORT CTS_PREIDENTIFIED 7779` |
-| `LISTEN_HOST` / `CONNECT_HOST` | Bind an API to a specific interface/hostname |
-| `ALLOW_ACCESS` | Whitelists client machines (or `ALL`) |
-| `PATH NAME './dir'` | Where logs/procedures/tables/handbooks etc. live |
-| `DEFAULT_PACKET_LOG_WRITER` / `_READER` | Which Ruby class writes/reads the binary log format |
-| `STALENESS_SECONDS` | How long before a telemetry item is shown stale (purple) in screens |
-| `META_INIT` | File of key/value pairs to seed the built-in `SYSTEM META` packet |
-| `CLASSIFICATION text r g b` | Adds a colored classification banner to every tool |
-| `HASHING_ALGORITHM` | Digest used to detect config changes (triggers cmd/tlm reload) |
+This is the (near-)full keyword set, not just a "worth knowing" subset — pulled directly from
+the v4 System Configuration docs:
+
+| Keyword | Parameters | Purpose |
+|---|---|---|
+| `AUTO_DECLARE_TARGETS` | — | Auto-discover every uppercase folder under `config/targets/` (see "Two ways a target gets into the system" above) |
+| `DECLARE_TARGET` | name, [renamed], [target_filename] | Explicit target declaration, optionally under a different name or pointing at a non-default target file |
+| `DECLARE_GEM_TARGET` | gem name, [renamed], [target_filename] | Same, for a target shipped as a Ruby gem |
+| `DECLARE_GEM_MULTI_TARGET` | gem name, target name, [renamed], [target_filename] | Multiple targets packaged in one gem |
+| `PORT NAME PORT#` | port name, port # | Sets a named server port, e.g. `PORT CTS_API 7777`, `PORT CTS_PREIDENTIFIED 7779`, `PORT TLMVIEWER_API`, `PORT CTS_CMD_ROUTER` |
+| `LISTEN_HOST` / `CONNECT_HOST` | port name, host | Bind an API to a specific interface/hostname (listen) vs. which host tools connect to |
+| `PATH NAME './dir'` | path name, path | Where `LOGS`/`TMP`/`SAVED_CONFIG`/`TABLES`/`PROCEDURES`/`HANDBOOKS` etc. live |
+| `DEFAULT_PACKET_LOG_WRITER` / `_READER` | filename, [params] | Which Ruby class writes/reads the binary log format |
+| `STALENESS_SECONDS` | seconds | How long before a telemetry item is shown stale (purple) in screens |
+| `ENABLE_DNS` / `DISABLE_DNS` | — | Toggle reverse DNS lookups for incoming tool connections |
+| `ENABLE_SOUND` | — | Audible sound on popups |
+| `ALLOW_ACCESS` | name or IP (or `ALL`) | Whitelists client machines |
+| `META_INIT` | filename | File of key/value pairs to seed the built-in `SYSTEM META` packet |
+| `TIME_ZONE_UTC` | — | Report all times as UTC instead of local time |
+| `ADD_HASH_FILE` | filename | Include an extra file in the config-change hashing sum (see `HASHING_ALGORITHM`) |
+| `CLASSIFICATION` | text, color, [g], [b] | Adds a colored classification banner to every tool |
+| `HASHING_ALGORITHM` | MD5\|RMD160\|SHA1\|SHA256\|SHA384\|SHA512 | Digest used to detect config changes (triggers cmd/tlm reload) |
+| `ALLOW_ROUTER_COMMANDING` | — | Let routers (not just interfaces) receive and forward commands |
+| `X_CSRF_TOKEN` | token | Secret token required on API calls |
+| `ALLOW_ORIGIN` / `ALLOW_HOST` | origin / host | Allowed HTTP `Origin`/`Host` header values on API calls |
 
 `target.txt` (per-target) complements this with things like `REQUIRE` (load extra Ruby from
 the target's `lib/`), `IGNORE_PARAMETER`/`IGNORE_ITEM` (hide fields from tools without
@@ -182,6 +196,7 @@ timestamped INFO/WARN/ERROR server messages alongside the binary logs.
 - [COSMOS Architecture (v4 docs)](https://ballaerospace.github.io/cosmos-website/docs/v4/)
 - [Interface Configuration (v4 docs)](https://ballaerospace.github.io/cosmos-website/docs/v4/interfaces)
 - [System Configuration (v4 docs)](https://ballaerospace.github.io/cosmos-website/docs/v4/system)
+  — source for the full `system.txt` keyword table above
 - [Directory structure (v4 docs)](https://ballaerospace.github.io/cosmos-website/docs/v4/structure)
 - [Getting Started (v4 docs)](https://ballaerospace.github.io/cosmos-website/docs/v4/gettingstarted)
 - [Chaining CmdTlmServers (v4 docs)](https://ballaerospace.github.io/cosmos-website/docs/v4/chaining)

@@ -55,21 +55,33 @@ All close with `END`; they nest arbitrarily.
 
 ## Value/telemetry widgets
 
-| Widget | Purpose |
-|---|---|
-| `VALUE` | bare numeric/string display, colored by current limits state |
-| `FORMATVALUE` | like `VALUE` but with an explicit printf-style format override |
-| `LABELVALUE` / `LABELVALUEDESC` | label + value (+ description) pair |
-| `LIMITSBAR` / `LIMITSCOLUMN` | horizontal/vertical red-yellow-green range gauge |
-| `LABELVALUELIMITSBAR` / `VALUELIMITSBAR` | composite label+value+gauge |
-| `TRENDBAR` / `LABELTRENDLIMITSBAR` | gauge plus recent-history marker |
-| `RANGEBAR` / `RANGECOLUMN` | gauge with caller-supplied (non-limits) min/max |
-| `PROGRESSBAR` / `LABELPROGRESSBAR` | percentage bar |
-| `LIMITSCOLOR` | plain stoplight-style colored dot |
-| `LINEGRAPH` | value vs. sample index | 
-| `TIMEGRAPH` | value vs. wall-clock time |
-| `ARRAY` | formatted display of an `ARRAY_ITEM` |
-| `BLOCK` | raw hex dump of a `BLOCK`-typed item |
+Every row takes `Target Packet Item` as its first three arguments (the telemetry-binding
+mnemonic from above); the `Parameters` column below lists what follows those three, in order,
+with `[...]` marking optional trailing args:
+
+| Widget | Parameters (after Target Packet Item) | Purpose |
+|---|---|---|
+| `VALUE` | `[Value Type] [Characters]` | bare numeric/string display, colored by current limits state |
+| `FORMATVALUE` | `Format String [Value Type] [Characters]` | like `VALUE` but with an explicit printf-style format override |
+| `FORMATFONTVALUE` | `Format String [Value Type] [Characters] [Font Name] [Font Size] [Font Weight] [Font Italics]` | `FORMATVALUE` with full font control |
+| `LABELVALUE` | `[Value Type] [Characters] [Alignment]` | label + value pair (label text is the item name) |
+| `LABELVALUEDESC` | `[Description] [Value Type] [Characters]` | label + value + description |
+| `LABELFORMATVALUE` | `Format String [Value Type] [Characters]` | `LABELVALUE` with a format override |
+| `LIMITSBAR` / `LIMITSCOLUMN` | `[Value Type] [Width] [Height]` | horizontal/vertical red-yellow-green range gauge |
+| `LIMITSCOLOR` | `[Value Type] [Radius] [Full Item Name]` | plain stoplight-style colored dot |
+| `LABELVALUELIMITSBAR` / `VALUELIMITSBAR` | `[Value Type] [Characters]` | composite label+value+gauge |
+| `LABELVALUELIMITSCOLUMN` / `VALUELIMITSCOLUMN` | `[Value Type] [Characters]` | vertical version of the above |
+| `TRENDBAR` | `[Value Type] [Trend Seconds] [Width] [Height]` | gauge plus recent-history marker |
+| `TRENDLIMITSBAR` / `LABELTRENDLIMITSBAR` | `[Value Type] [Trend Seconds] [Characters] [Width] [Height]` | `TRENDBAR` combined with limits coloring, with/without a label |
+| `RANGEBAR` / `RANGECOLUMN` | `Low High [Value Type] [Width] [Height]` | gauge with caller-supplied (non-limits) min/max |
+| `LABELVALUERANGEBAR` / `LABELVALUERANGECOLUMN` | `Low High [Value Type] [Characters] [Width] [Height]` | `RANGEBAR`/`RANGECOLUMN` with a label |
+| `VALUERANGEBAR` / `VALUERANGECOLUMN` | `Low High [Value Type] [Characters] [Width] [Height]` | same, value shown but unlabeled |
+| `PROGRESSBAR` / `LABELPROGRESSBAR` | `[Scale Factor] [Width] [Value Type]` | percentage bar |
+| `LINEGRAPH` | `[Num Samples] [Width] [Height] [Value Type]` | value vs. sample index |
+| `TIMEGRAPH` | `[Num Samples] [Width] [Height] [Point Size] [Time Item Name] [Value Type]` | value vs. wall-clock time |
+| `TEXTBOX` | `[Width] [Height] [Value Type]` | multi-line scrollable text display |
+| `ARRAY` | `[Width] [Height] [Format String] [Items per Row] [Value Type]` | formatted display of an `ARRAY_ITEM` |
+| `BLOCK` | `[Width] [Height] [Format String] [Bytes per Word] [Words per Row] [Address Format] [Value Type]` | raw hex dump of a `BLOCK`-typed item |
 
 Everything in this table is a live, polling-driven read of one telemetry item's current value —
 this is the direct analogue of the `Item`/`Packet` structures Solaris's parser needs to produce
@@ -114,7 +126,8 @@ value-dependent visuals don't need a Ruby callback.
 - Value-widget-specific: `COLORBLIND` (pattern-based limits indication instead of color-only,
   an actual accessibility feature worth keeping), `ENABLE_AGING`/`GRAY_RATE`/`GRAY_TOLERANCE`/
   `MIN_GRAY` (gray out a value that hasn't changed recently — a cheap, effective "is this feed
-  even alive" signal), `TREND_SECONDS` (history window for trend widgets).
+  even alive" signal; also accepted spelled `GREY_RATE`/`GREY_TOLERANCE`/`MIN_GREY`),
+  `TREND_SECONDS` (history window for trend widgets).
 
 ## Tool-level config
 
