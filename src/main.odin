@@ -15,6 +15,12 @@ TokenState :: enum {
     COMMENT,
 }
 
+Token :: struct {
+    state:     TokenState,
+    idx_start: int,
+    idx_end:   int,
+}
+
 is_ascii_letter :: proc(b: u8) -> bool {
     return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b == '_')
 }
@@ -37,6 +43,8 @@ parse_config_file :: proc(filepath: string) {
 
     for i := 0; i < len(text); i += 1 {
         b := text[i] // Yields u8
+
+        token := Token{TokenState.NONE, 0, 0}
         
         switch token_state {
             case TokenState.NONE:
@@ -66,15 +74,15 @@ parse_config_file :: proc(filepath: string) {
 
                 switch b {
                     case ' ', '\t', '\v', '\f', '\n', '\r':
-                        fmt.printfln("ident(%s)", text[token_idx:i])
+                        token = Token{TokenState.IDENT, token_idx, i}
                         token_state = TokenState.NONE
 
                     case '"':
-                        fmt.printfln("ident(%s)", text[token_idx:i])
+                        token = Token{TokenState.IDENT, token_idx, i}
                         token_state = TokenState.STR
                         token_idx = i
                     case '#':
-                        fmt.printfln("ident(%s)", text[token_idx:i])
+                        token = Token{TokenState.IDENT, token_idx, i}
                         token_state = TokenState.COMMENT
                         token_idx = i
                     // allow . ands number
@@ -90,26 +98,26 @@ parse_config_file :: proc(filepath: string) {
                         fmt.println("ERROR: string was not completed") // no multiline string
                         return
                     case '"':
-                        fmt.printfln("string(%s)", text[token_idx:i+1])
+                        token = Token{TokenState.STR, token_idx, i + 1}
                         token_state = TokenState.NONE
                 }
-            
+
             case TokenState.INT:
                 assert(i >= 1)
                 switch b {
                     case '\t', '\v', '\f', '\n', '\r', ' ':
-                        fmt.printfln("num(%s)", text[token_idx:i])
+                        token = Token{TokenState.INT, token_idx, i}
                         token_state = TokenState.NONE
                     case '.', 'e':
                         token_state = TokenState.FLOAT // convert to float
                     case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
                         token_state = TokenState.INT // nominal
                     case '"':
-                        fmt.printfln("num(%s)", text[token_idx:i])
+                        token = Token{TokenState.INT, token_idx, i}
                         token_state = TokenState.STR
                         token_idx = i
                     case '#':
-                        fmt.printfln("num(%s)", text[token_idx:i])
+                        token = Token{TokenState.INT, token_idx, i}
                         token_state = TokenState.COMMENT
                         token_idx = i
                     case:
@@ -117,7 +125,7 @@ parse_config_file :: proc(filepath: string) {
                             fmt.printfln("ERROR: character %c not allowed in float", b) // no multiline string
                             return
                         } else {
-                            fmt.printfln("float(%s)", text[token_idx:i])
+                            token = Token{TokenState.FLOAT, token_idx, i}
                             token_state = TokenState.IDENT
                             token_idx = i
                         }
@@ -127,16 +135,16 @@ parse_config_file :: proc(filepath: string) {
                 assert(i >= 1)
                 switch b {
                     case '\t', '\v', '\f', '\n', '\r', ' ':
-                        fmt.printfln("float(%s)", text[token_idx:i])
+                        token = Token{TokenState.FLOAT, token_idx, i}
                         token_state = TokenState.NONE
                     case '.', 'e', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
                         token_state = TokenState.FLOAT // nominal
                     case '"':
-                        fmt.printfln("float(%s)", text[token_idx:i])
+                        token = Token{TokenState.FLOAT, token_idx, i}
                         token_state = TokenState.STR
                         token_idx = i
                     case '#':
-                        fmt.printfln("float(%s)", text[token_idx:i])
+                        token = Token{TokenState.FLOAT, token_idx, i}
                         token_state = TokenState.COMMENT
                         token_idx = i
                     case:
@@ -144,7 +152,7 @@ parse_config_file :: proc(filepath: string) {
                             fmt.printfln("ERROR: character %c not allowed in float", b) // no multiline string
                             return
                         } else {
-                            fmt.printfln("float(%s)", text[token_idx:i])
+                            token = Token{TokenState.FLOAT, token_idx, i}
                             token_state = TokenState.IDENT
                             token_idx = i
                         }
@@ -154,9 +162,26 @@ parse_config_file :: proc(filepath: string) {
                 assert(i >= 1)
                 switch b {
                     case '\n', '\r':
-                        fmt.printfln("comment(%s)", text[token_idx:i])
+                        token = Token{TokenState.COMMENT, token_idx, i}
                         token_state = TokenState.NONE
                 }
+        }
+
+        if token.state != TokenState.NONE {
+            token_text := text[token.idx_start:token.idx_end]
+            switch token.state {
+                case TokenState.IDENT:
+                    fmt.printfln("ident(%s)", token_text)
+                case TokenState.STR:
+                    fmt.printfln("string(%s)", token_text)
+                case TokenState.INT:
+                    fmt.printfln("num(%s)", token_text)
+                case TokenState.FLOAT:
+                    fmt.printfln("float(%s)", token_text)
+                case TokenState.COMMENT:
+                    fmt.printfln("comment(%s)", token_text)
+                case TokenState.NONE:
+            }
         }
     }
 }
