@@ -22,18 +22,26 @@ its `README.md`). Before building, download it manually:
 ./dev.sh
 ```
 
-This just runs `./bin/odin/odin.exe run ./src`. There is no separate build/test/lint step
-defined yet — no test suite, no CI config, no formatter config exist in this repo currently.
+This just runs `./bin/odin/odin.exe run ./src`. There is no CI config and no formatter config
+in this repo currently. There is a small test suite (`src/main_test.odin`), run with:
+
+```sh
+./bin/odin/odin.exe test ./src
+```
 
 ## Architecture
 
 - `src/main.odin` — single-file program, currently split into two parts:
   - **Active code**: a hand-rolled tokenizer/parser (`parse_config_file`) for COSMOS-style
     telemetry definition files. It runs against `examples/simple_tlm/tlm.txt` and prints
-    recognized tokens (`ident`, `string`, `num`, `float`, `comment`) via `fmt.println`.
+    recognized tokens (`ident`, `string`, `num`, `float`, `comment`) via `fmt.printfln`.
   - **Commented-out code** at the bottom of the file: a raylib window loop that draws a
     telemetry-style panel (voltage readout, etc.). This is the intended eventual UI direction
     but is disabled — treat it as a sketch/reference, not live code.
+- `src/main_test.odin` — `core:testing`-based tests, currently covering `is_ascii_letter`. Run
+  with `./bin/odin/odin.exe test ./src` (see "Build & run"). Add to this as parser logic grows
+  more testable surface (e.g. if `parse_config_file` is refactored to return a token list
+  instead of only printing).
 - `examples/simple_tlm/tlm.txt` — a sample telemetry definition in COSMOS command/telemetry
   definition language (`APPEND_ITEM`, `LIMITS`, `STATE`, `GENERIC_READ_CONVERSION_*`, etc.).
   This is the input format the parser in `main.odin` is being built to handle. Use this file
@@ -54,8 +62,11 @@ useful background before extending the telemetry-definition parser.
   `fmt.printf`/`fmt.printfln` do. `parse_config_file` was fixed to use `fmt.printfln` for this
   reason — if you add more token-printing calls, use `fmt.printfln`, not `fmt.println`, when
   interpolating values.
-- No tests exist yet. If you add parser logic, consider whether Odin's built-in `testing`
-  package is appropriate before introducing a different test approach.
+- A test suite now exists (`src/main_test.odin`, using Odin's built-in `testing` package) but
+  only covers the pure helper `is_ascii_letter` so far — `parse_config_file` itself isn't
+  covered because it only prints tokens rather than returning a structured value. If you extend
+  the parser, prefer having it return data (a token/packet list) so tests can assert on it
+  instead of only checking printed output.
 
 ## Conventions
 
