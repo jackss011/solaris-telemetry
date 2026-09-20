@@ -307,9 +307,212 @@ parse_config_file :: proc(filepath: string) {
     }
 }
 
+// main :: proc() {
+//     fmt.println("Hello basic parse example!")
+//     parse_config_file("examples/simple_tlm/tlm.txt")
+// }
+
+
+TokenType :: enum {
+    NONE,
+    NEWLINE,
+    IDENT,
+    STR,
+    INT,
+    FLOAT,
+    COMMENT,
+}
+
+TokenRef :: struct {
+    type:      TokenType,
+    idx_start: int,
+    idx_end:   int,
+}
+
+grab_token :: proc(text: string, idx: int) -> TokenRef {
+    token := TokenRef{TokenType.NONE, 0, 0}
+    found := false
+    error := false
+
+    for i := idx; i < len(text) && !found && !error; i += 1 {
+        b := text[i] // Yields u8
+
+        #partial switch token.type {
+
+        case TokenType.NONE:
+            switch b {
+                case '\n':
+                    token.type = TokenType.NEWLINE
+                    token.idx_end = i+1
+                    found = true
+                case '"':
+                    token.type = TokenType.STR
+                case '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+                    token.type = TokenType.INT
+                case '.':
+                    token.type = TokenType.FLOAT
+                case '\t', '\v', '\f', '\r', ' ':
+                    token.type = TokenType.NONE
+                case '#':
+                    token.type = TokenType.COMMENT
+                case:
+                    token.type = TokenType.IDENT
+            }
+
+            token.idx_start = i
+
+        case TokenType.IDENT:
+            switch b {
+                case ' ', '\t', '\v', '\f', '\r', '\n', '"', '#':
+                    token.idx_end = i
+                    found = true
+            }
+
+        case TokenType.STR:
+            switch b {
+                case '\t', '\v', '\f':
+                    fmt.println("ERROR: character not allowed inside of string")
+                    error = true
+                case '\n', '\r':
+                    fmt.println("ERROR: string was not completed") // no multiline string
+                    error = true
+                case '"':
+                    assert(token.idx_start+1 <= i)
+                    token.idx_end = i+1
+                    found = true
+            }
+
+        case TokenType.INT:
+            switch b {
+                case '\t', '\v', '\f', '\n', '\r', ' ', '"', '#':
+                    token.idx_end = i
+                    found = true
+                case '.', 'e':
+                    token.type = TokenType.FLOAT // convert to float
+                case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+                    // nominal
+                case:
+                    if is_ascii_letter(b) {
+                        fmt.printfln("ERROR: character %c not allowed in float", b) // no multiline string
+                        error = true
+                    } else {
+                        token.idx_end = i
+                        found = true
+                    }
+            }
+
+        case TokenType.FLOAT:
+            switch b {
+                case '\t', '\v', '\f', '\n', '\r', ' ', '"', '#':
+                    token.idx_end = i
+                    found = true
+                case '.', 'e', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+                    // nominal
+                case:
+                    if is_ascii_letter(b) {
+                        fmt.printfln("ERROR: character %c not allowed in float", b) // no multiline string
+                        error = true
+                    } else {
+                        token.idx_end = i
+                        found = true
+                    }
+            }
+
+        case TokenType.COMMENT:
+            assert(i >= 1)
+            switch b {
+                case '\n', '\r':
+                    token.idx_end = i
+                    found = true
+            }
+        }
+    }
+
+    if error { os.exit(32) }
+
+    return token
+}
+
+token_ref_print :: proc(token: TokenRef, text: string) {
+    switch token.type {
+        case TokenType.NONE:
+            fmt.println("none")
+        case TokenType.NEWLINE:
+            fmt.println("newline")
+        case TokenType.IDENT:
+            fmt.printfln("ident(%s)", text[token.idx_start:token.idx_end])
+        case TokenType.STR:
+            fmt.printfln("string(%s)", text[token.idx_start:token.idx_end])
+        case TokenType.INT:
+            fmt.printfln("int(%s)", text[token.idx_start:token.idx_end])
+        case TokenType.FLOAT:
+            fmt.printfln("float(%s)", text[token.idx_start:token.idx_end])
+        case TokenType.COMMENT:
+            fmt.printfln("comment(%s)", text[token.idx_start:token.idx_end])
+    }
+}
+
+line_ref_print :: proc(keyword: TokenRef, params: []TokenRef, text: string) {
+    fmt.printf("%s(", text[keyword.idx_start:keyword.idx_end])
+    for param, i in params {
+        if i > 0 {
+            fmt.printf(", ")
+        }
+        fmt.printf("%s", text[param.idx_start:param.idx_end])
+    }
+    fmt.printfln(")")
+}
+
+
+parse_config_file2 :: proc(filepath: string) {
+    data, err := os.read_entire_file(filepath, context.allocator)
+	if err != nil {
+		// could not read file
+        fmt.println("failed to load file")
+		return
+	}
+	defer delete(data, context.allocator)
+
+    text := string(data)
+    idx := 0
+    done := false
+
+    keyword : TokenRef
+    params : [16]TokenRef
+    params_i := 0
+
+    for !done {
+        token := grab_token(text, idx)
+        // token_ref_print(token, text)
+        idx = token.idx_end
+
+        #partial switch token.type {
+        case TokenType.NONE:
+            done = true
+            fallthrough
+        case TokenType.NEWLINE:
+            if keyword.type != TokenType.NONE {
+                line_ref_print(keyword, params[:params_i], text)
+                keyword = TokenRef{TokenType.NONE, 0, 0}
+            }
+        case TokenType.COMMENT:
+            // do nothing
+        case:
+            if keyword.type != TokenType.NONE {
+                params[params_i] = token
+                params_i += 1
+            } else {
+                keyword = token
+                params_i = 0
+            }
+        }
+    }
+}
+
+
 main :: proc() {
     fmt.println("Hello basic parse example!")
-    parse_config_file("examples/simple_tlm/tlm.txt")
+    parse_config_file2("examples/simple_tlm/tlm.txt")
 }
 
 // main :: proc() {
