@@ -329,6 +329,10 @@ TokenRef :: struct {
     idx_end:   int,
 }
 
+token_ref_text :: proc(token: TokenRef, text: string) -> string {
+    return text[token.idx_start:token.idx_end]
+}
+
 grab_token :: proc(text: string, idx: int) -> TokenRef {
     token := TokenRef{TokenType.NONE, 0, 0}
     found := false
@@ -430,10 +434,21 @@ grab_token :: proc(text: string, idx: int) -> TokenRef {
 
     if error { os.exit(32) }
 
+    // Ran out of input before a delimiter closed the token: treat EOF as an implicit terminator
+    // instead of returning idx_end=0, which would make the caller rewind to the start of the
+    // file forever. type==NONE here means we were between tokens (trailing whitespace/nothing
+    // left) rather than mid-token.
+    if !found {
+        if token.type == TokenType.NONE {
+            token.idx_start = len(text)
+        }
+        token.idx_end = len(text)
+    }
+
     return token
 }
 
-token_ref_print :: proc(token: TokenRef, text: string) {
+print_token_ref :: proc(token: TokenRef, text: string) {
     switch token.type {
         case TokenType.NONE:
             fmt.println("none")
@@ -452,15 +467,105 @@ token_ref_print :: proc(token: TokenRef, text: string) {
     }
 }
 
-line_ref_print :: proc(keyword: TokenRef, params: []TokenRef, text: string) {
-    fmt.printf("%s(", text[keyword.idx_start:keyword.idx_end])
-    for param, i in params {
+print_keyword :: proc(keyword: Keyword, text: string) {
+    fmt.printf("%s(", text[keyword.token.idx_start:keyword.token.idx_end])
+    for i in 0..<keyword.params_count {
         if i > 0 {
             fmt.printf(", ")
         }
+        param := keyword.params[i]
         fmt.printf("%s", text[param.idx_start:param.idx_end])
     }
-    fmt.printfln(")")
+    fmt.printf(")")
+
+    if keyword.raw_idx_end > keyword.raw_idx_start {
+        raw := strings.trim_space(text[keyword.raw_idx_start:keyword.raw_idx_end])
+        fmt.printf(" -- %s", raw)
+    }
+
+    fmt.println()
+}
+
+// Scans forward line-by-line from idx looking for a line whose first word (leading spaces/tabs
+// skipped) is exactly `needle`. Returns the index where that line begins - so text[idx:end_idx]
+// is everything up to but not including it, verbatim - and whether `needle` was found before
+// EOF. On failure, end_idx is len(text).
+grab_until :: proc(text: string, idx: int, needle: string) -> (found: bool, end_idx: int) {
+    i := idx
+    for i < len(text) {
+        line_start := i
+
+        j := i
+        for j < len(text) && (text[j] == ' ' || text[j] == '\t') {
+            j += 1
+        }
+        word_start := j
+        for j < len(text) && text[j] != '\n' && text[j] != '\r' && text[j] != ' ' && text[j] != '\t' {
+            j += 1
+        }
+
+        word := text[word_start:j]
+        if word == needle {
+            return true, line_start
+        }
+
+        for i < len(text) && text[i] != '\n' {
+            i += 1
+        }
+        if i >= len(text) {
+            break
+        }
+        i += 1
+    }
+
+    return false, len(text)
+}
+
+MAX_KEYWORD_PARAMS :: 16
+
+Keyword :: struct {
+    token:        TokenRef,
+    params:       [MAX_KEYWORD_PARAMS]TokenRef,
+    params_count: int,
+    raw_idx_start: int,
+    raw_idx_end: int
+}
+
+// Pulls one logical COSMOS line (keyword + its params) starting at idx, skipping over blank
+// lines and comment-only lines along the way. All storage is inline/fixed-size (no allocations)
+// - params beyond MAX_KEYWORD_PARAMS on one line will assert. Mirrors grab_token's shape: call
+// it in a loop, feeding `next_idx` back in as `idx`, until the returned keyword.token.type is
+// TokenType.NONE (end of file).
+grab_keyword :: proc(text: string, idx: int) -> (keyword: Keyword, next_idx: int) {
+    idx := idx
+
+    for {
+        token := grab_token(text, idx)
+        idx = token.idx_end
+
+        #partial switch token.type {
+        case TokenType.NONE:
+            return keyword, idx
+
+        case TokenType.NEWLINE:
+            if keyword.token.type != TokenType.NONE {
+                return keyword, idx
+            }
+            // blank line before any keyword on it yet - keep scanning
+
+        case TokenType.COMMENT:
+            // comment-only line - keep scanning
+
+        case:
+            if keyword.token.type == TokenType.NONE {
+                keyword.token = token
+            } else {
+                assert(keyword.params_count < len(keyword.params))
+                keyword.params[keyword.params_count] = token
+                keyword.params_count += 1
+            }
+        }
+    }
 }
 
 
@@ -475,37 +580,43 @@ parse_config_file2 :: proc(filepath: string) {
 
     text := string(data)
     idx := 0
-    done := false
 
-    keyword : TokenRef
-    params : [16]TokenRef
-    params_i := 0
+    for {
+        keyword, next_idx := grab_keyword(text, idx)
+        idx = next_idx
 
-    for !done {
-        token := grab_token(text, idx)
-        // token_ref_print(token, text)
-        idx = token.idx_end
+        if keyword.token.type == TokenType.NONE {
+            break
+        }
 
-        #partial switch token.type {
-        case TokenType.NONE:
-            done = true
-            fallthrough
-        case TokenType.NEWLINE:
-            if keyword.type != TokenType.NONE {
-                line_ref_print(keyword, params[:params_i], text)
-                keyword = TokenRef{TokenType.NONE, 0, 0}
+        // look for raw sections
+        if keyword.token.type == TokenType.IDENT {
+            raw_mode_until: string
+
+            switch token_ref_text(keyword.token, text) {
+                case "GENERIC_READ_CONVERSION_START":
+                    raw_mode_until = "GENERIC_READ_CONVERSION_END"
+                case "GENERIC_WRITE_CONVERSION_START":
+                    raw_mode_until = "GENERIC_WRITE_CONVERSION_END"
             }
-        case TokenType.COMMENT:
-            // do nothing
-        case:
-            if keyword.type != TokenType.NONE {
-                params[params_i] = token
-                params_i += 1
-            } else {
-                keyword = token
-                params_i = 0
+
+            if raw_mode_until != "" {
+                found, end_idx := grab_until(text, idx, raw_mode_until)
+                keyword.raw_idx_start = idx
+                keyword.raw_idx_end = end_idx
+
+                if(!found) {
+                    fmt.printfln("[ERROR] %s not found!", raw_mode_until)
+                    os.exit(32)
+                }
+
+                // consume the END line itself so it doesn't get emitted as its own keyword
+                _, idx = grab_keyword(text, end_idx)
             }
         }
+
+        // debug print
+        print_keyword(keyword, text)
     }
 }
 
