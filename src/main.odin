@@ -128,131 +128,131 @@ parse_config_file :: proc(filepath: string) {
         token := Token{TokenState.NONE, 0, 0}
         
         switch token_state {
-            case TokenState.RAW:
-                // Unreachable: RAW tokens are synthesized directly by find_generic_conversion_end
-                // (see the '\n' handling below), never assigned to token_state, so this per-byte
-                // state machine never actually steps through a RAW run. Case exists only because
-                // Odin requires every TokenState value to be covered here.
+        case TokenState.RAW:
+            // Unreachable: RAW tokens are synthesized directly by find_generic_conversion_end
+            // (see the '\n' handling below), never assigned to token_state, so this per-byte
+            // state machine never actually steps through a RAW run. Case exists only because
+            // Odin requires every TokenState value to be covered here.
 
-            case TokenState.NONE:
-                assert(!escaping)
+        case TokenState.NONE:
+            assert(!escaping)
 
-                switch b {
-                    case '"':
-                        token_state = TokenState.STR
-                    case '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-                        token_state = TokenState.INT
-                    case '.':
-                        token_state = TokenState.FLOAT
-                    case '\t', '\v', '\f', '\n', '\r', ' ':
-                        token_state = TokenState.NONE
-                    case '#':
-                        token_state = TokenState.COMMENT
-                    case:
-                        // fmt.println("hello", b)
-                        token_state = TokenState.IDENT
-                }
+            switch b {
+                case '"':
+                    token_state = TokenState.STR
+                case '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+                    token_state = TokenState.INT
+                case '.':
+                    token_state = TokenState.FLOAT
+                case '\t', '\v', '\f', '\n', '\r', ' ':
+                    token_state = TokenState.NONE
+                case '#':
+                    token_state = TokenState.COMMENT
+                case:
+                    // fmt.println("hello", b)
+                    token_state = TokenState.IDENT
+            }
 
-                token_idx = i
+            token_idx = i
 
-            case TokenState.IDENT:
-                assert(!escaping)
-                assert(i >= 1)
+        case TokenState.IDENT:
+            assert(!escaping)
+            assert(i >= 1)
 
-                switch b {
-                    case ' ', '\t', '\v', '\f', '\n', '\r':
-                        token = Token{TokenState.IDENT, token_idx, i}
-                        token_state = TokenState.NONE
+            switch b {
+                case ' ', '\t', '\v', '\f', '\n', '\r':
+                    token = Token{TokenState.IDENT, token_idx, i}
+                    token_state = TokenState.NONE
 
-                    case '"':
-                        token = Token{TokenState.IDENT, token_idx, i}
-                        token_state = TokenState.STR
-                        token_idx = i
-                    case '#':
-                        token = Token{TokenState.IDENT, token_idx, i}
-                        token_state = TokenState.COMMENT
-                        token_idx = i
-                    // allow . ands number
-                }
+                case '"':
+                    token = Token{TokenState.IDENT, token_idx, i}
+                    token_state = TokenState.STR
+                    token_idx = i
+                case '#':
+                    token = Token{TokenState.IDENT, token_idx, i}
+                    token_state = TokenState.COMMENT
+                    token_idx = i
+                // allow . ands number
+            }
 
-            case TokenState.STR:
-                assert(i >= 1)
-                switch b {
-                    case '\t', '\v', '\f':
-                        fmt.println("ERROR: character not allowed inside of string")
-                        return;
-                    case '\n', '\r':
-                        fmt.println("ERROR: string was not completed") // no multiline string
+        case TokenState.STR:
+            assert(i >= 1)
+            switch b {
+                case '\t', '\v', '\f':
+                    fmt.println("ERROR: character not allowed inside of string")
+                    return;
+                case '\n', '\r':
+                    fmt.println("ERROR: string was not completed") // no multiline string
+                    return
+                case '"':
+                    assert(token_idx+1 <= i)
+                    token = Token{TokenState.STR, token_idx, i+1}
+                    token_state = TokenState.NONE
+            }
+
+        case TokenState.INT:
+            assert(i >= 1)
+            switch b {
+                case '\t', '\v', '\f', '\n', '\r', ' ':
+                    token = Token{TokenState.INT, token_idx, i}
+                    token_state = TokenState.NONE
+                case '.', 'e':
+                    token_state = TokenState.FLOAT // convert to float
+                case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+                    token_state = TokenState.INT // nominal
+                case '"':
+                    token = Token{TokenState.INT, token_idx, i}
+                    token_state = TokenState.STR
+                    token_idx = i
+                case '#':
+                    token = Token{TokenState.INT, token_idx, i}
+                    token_state = TokenState.COMMENT
+                    token_idx = i
+                case:
+                    if is_ascii_letter(b) {
+                        fmt.printfln("ERROR: character %c not allowed in float", b) // no multiline string
                         return
-                    case '"':
-                        assert(token_idx+1 <= i)
-                        token = Token{TokenState.STR, token_idx, i+1}
-                        token_state = TokenState.NONE
-                }
-
-            case TokenState.INT:
-                assert(i >= 1)
-                switch b {
-                    case '\t', '\v', '\f', '\n', '\r', ' ':
-                        token = Token{TokenState.INT, token_idx, i}
-                        token_state = TokenState.NONE
-                    case '.', 'e':
-                        token_state = TokenState.FLOAT // convert to float
-                    case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-                        token_state = TokenState.INT // nominal
-                    case '"':
-                        token = Token{TokenState.INT, token_idx, i}
-                        token_state = TokenState.STR
-                        token_idx = i
-                    case '#':
-                        token = Token{TokenState.INT, token_idx, i}
-                        token_state = TokenState.COMMENT
-                        token_idx = i
-                    case:
-                        if is_ascii_letter(b) {
-                            fmt.printfln("ERROR: character %c not allowed in float", b) // no multiline string
-                            return
-                        } else {
-                            token = Token{TokenState.FLOAT, token_idx, i}
-                            token_state = TokenState.IDENT
-                            token_idx = i
-                        }
-                }
-
-            case TokenState.FLOAT:
-                assert(i >= 1)
-                switch b {
-                    case '\t', '\v', '\f', '\n', '\r', ' ':
+                    } else {
                         token = Token{TokenState.FLOAT, token_idx, i}
-                        token_state = TokenState.NONE
-                    case '.', 'e', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-                        token_state = TokenState.FLOAT // nominal
-                    case '"':
-                        token = Token{TokenState.FLOAT, token_idx, i}
-                        token_state = TokenState.STR
+                        token_state = TokenState.IDENT
                         token_idx = i
-                    case '#':
-                        token = Token{TokenState.FLOAT, token_idx, i}
-                        token_state = TokenState.COMMENT
-                        token_idx = i
-                    case:
-                        if is_ascii_letter(b) {
-                            fmt.printfln("ERROR: character %c not allowed in float", b) // no multiline string
-                            return
-                        } else {
-                            token = Token{TokenState.FLOAT, token_idx, i}
-                            token_state = TokenState.IDENT
-                            token_idx = i
-                        }
-                }
+                    }
+            }
 
-            case TokenState.COMMENT:
-                assert(i >= 1)
-                switch b {
-                    case '\n', '\r':
-                        token = Token{TokenState.COMMENT, token_idx, i}
-                        token_state = TokenState.NONE
-                }
+        case TokenState.FLOAT:
+            assert(i >= 1)
+            switch b {
+                case '\t', '\v', '\f', '\n', '\r', ' ':
+                    token = Token{TokenState.FLOAT, token_idx, i}
+                    token_state = TokenState.NONE
+                case '.', 'e', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+                    token_state = TokenState.FLOAT // nominal
+                case '"':
+                    token = Token{TokenState.FLOAT, token_idx, i}
+                    token_state = TokenState.STR
+                    token_idx = i
+                case '#':
+                    token = Token{TokenState.FLOAT, token_idx, i}
+                    token_state = TokenState.COMMENT
+                    token_idx = i
+                case:
+                    if is_ascii_letter(b) {
+                        fmt.printfln("ERROR: character %c not allowed in float", b) // no multiline string
+                        return
+                    } else {
+                        token = Token{TokenState.FLOAT, token_idx, i}
+                        token_state = TokenState.IDENT
+                        token_idx = i
+                    }
+            }
+
+        case TokenState.COMMENT:
+            assert(i >= 1)
+            switch b {
+                case '\n', '\r':
+                    token = Token{TokenState.COMMENT, token_idx, i}
+                    token_state = TokenState.NONE
+            }
         }
 
         if token.state != TokenState.NONE && token.state != TokenState.COMMENT {
