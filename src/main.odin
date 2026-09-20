@@ -12,6 +12,7 @@ TokenState :: enum {
     STR,
     INT,
     FLOAT,
+    RAW,
     COMMENT,
 }
 
@@ -21,37 +22,78 @@ Token :: struct {
     idx_end:   int,
 }
 
+token_text :: proc(token: Token, text: string) -> string {
+    return text[token.idx_start:token.idx_end]
+}
+
 token_print :: proc(token: Token, text: string) {
     if token.state == TokenState.NONE {
         fmt.println("none")
         return
     }
 
-    token_text := text[token.idx_start:token.idx_end]
+    str := token_text(token, text)
     switch token.state {
         case TokenState.IDENT:
-            fmt.printfln("ident(%s)", token_text)
+            fmt.printfln("ident(%s)", str)
         case TokenState.STR:
-            fmt.printfln("string(%s)", token_text)
+            fmt.printfln("string(%s)", str)
         case TokenState.INT:
-            fmt.printfln("num(%s)", token_text)
+            fmt.printfln("num(%s)", str)
         case TokenState.FLOAT:
-            fmt.printfln("float(%s)", token_text)
+            fmt.printfln("float(%s)", str)
         case TokenState.COMMENT:
-            fmt.printfln("comment(%s)", token_text)
+            fmt.printfln("comment(%s)", str)
+        case TokenState.RAW:
+            fmt.printfln("raw(%s)", str)
         case TokenState.NONE:
     }
 }
 
 line_print :: proc(keyword: Token, params: []Token, text: string) {
-    fmt.printf("%s(", text[keyword.idx_start:keyword.idx_end])
+    fmt.printf("%s(", token_text(keyword, text))
     for param, i in params {
         if i > 0 {
             fmt.printf(", ")
         }
-        fmt.printf("%s", text[param.idx_start:param.idx_end])
+        fmt.printf("%s", token_text(param, text))
     }
     fmt.printfln(")")
+}
+
+// Scans forward line-by-line from `start` looking for a line whose first word is
+// GENERIC_READ_CONVERSION_END or GENERIC_WRITE_CONVERSION_END. Returns the index where that
+// line begins (so text[start:end_line_start] is the raw block's content, verbatim) and whether
+// a terminator was found at all.
+find_generic_conversion_end :: proc(text: string, start: int) -> (end_line_start: int, ok: bool) {
+    i := start
+    for i < len(text) {
+        line_start := i
+
+        j := i
+        for j < len(text) && (text[j] == ' ' || text[j] == '\t') {
+            j += 1
+        }
+        word_start := j
+        for j < len(text) && text[j] != '\n' && text[j] != '\r' && text[j] != ' ' && text[j] != '\t' {
+            j += 1
+        }
+
+        word := text[word_start:j]
+        if word == "GENERIC_READ_CONVERSION_END" || word == "GENERIC_WRITE_CONVERSION_END" {
+            return line_start, true
+        }
+
+        for i < len(text) && text[i] != '\n' {
+            i += 1
+        }
+        if i >= len(text) {
+            break
+        }
+        i += 1
+    }
+
+    return 0, false
 }
 
 is_ascii_letter :: proc(b: u8) -> bool {
@@ -86,6 +128,12 @@ parse_config_file :: proc(filepath: string) {
         token := Token{TokenState.NONE, 0, 0}
         
         switch token_state {
+            case TokenState.RAW:
+                // Unreachable: RAW tokens are synthesized directly by find_generic_conversion_end
+                // (see the '\n' handling below), never assigned to token_state, so this per-byte
+                // state machine never actually steps through a RAW run. Case exists only because
+                // Odin requires every TokenState value to be covered here.
+
             case TokenState.NONE:
                 assert(!escaping)
 
@@ -224,7 +272,34 @@ parse_config_file :: proc(filepath: string) {
             }
         }
 
-        if b == '\n' { line_count += 1 }
+        if b == '\n' {
+            // If the line that just ended opened a GENERIC_*_CONVERSION block, everything up to
+            // its matching END line is arbitrary embedded code, not further COSMOS keywords/
+            // params — capture it as one raw blob and resume normal tokenizing at the END line.
+            if keyword.state != TokenState.NONE && keyword_line_count == line_count {
+                switch token_text(keyword, text) {
+                case "GENERIC_READ_CONVERSION_START", "GENERIC_WRITE_CONVERSION_START":
+                    line_print(keyword, params[:params_i], text)
+
+                    raw_start := i + 1
+                    raw_end, ok := find_generic_conversion_end(text, raw_start)
+                    if !ok {
+                        fmt.println("ERROR: unterminated GENERIC_*_CONVERSION block")
+                        return
+                    }
+
+                    token_print(Token{TokenState.RAW, raw_start, raw_end}, text)
+                    line_count += strings.count(text[raw_start:raw_end], "\n")
+
+                    keyword = Token{TokenState.NONE, 0, 0}
+                    params_i = 0
+                    token_state = TokenState.NONE
+                    i = raw_end - 1 // the for-loop's `i += 1` lands exactly on the END line
+                }
+            }
+
+            line_count += 1
+        }
     }
 
     if keyword.state != TokenState.NONE {
