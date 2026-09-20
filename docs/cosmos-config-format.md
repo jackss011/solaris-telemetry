@@ -74,7 +74,27 @@ Notes:
 - **`GENERIC_READ_CONVERSION_START [converted-type] [converted-bit-size]` ... `GENERIC_READ_CONVERSION_END`**
   — inline Ruby between the two lines, last line's value is the conversion's result.
   `tlm.txt`'s `DURATION` derived item is this: `(packet.read('COLLECTS') * 0.5)` between the
-  start/end markers.
+  start/end markers. Unlike every other keyword, this one is a **mode switch**, not a
+  single-line directive — worth spelling out precisely since it's the one place the line-level
+  `(keyword, params)` model breaks down:
+  - `GENERIC_READ_CONVERSION_START` itself just records the optional converted type
+    (`INT`/`UINT`/`FLOAT`/`STRING`/`BLOCK`) and bit size as metadata (used by DART logging;
+    warned about, not enforced) and flips `PacketConfig` into "building generic conversion"
+    mode.
+  - While in that mode, `PacketConfig#process_file` stops tokenizing lines into keyword/params
+    at all. Instead of dispatching on `keyword`, it appends the **raw line text**
+    (`ConfigParser#line`, the same attribute `ConfigParser` keeps around for error messages) to
+    an accumulator string, verbatim, one line at a time — so arbitrary Ruby, including
+    anything that would otherwise look like a keyword, passes through untouched.
+  - `GENERIC_READ_CONVERSION_END` ends the mode and wraps the accumulated text in a
+    `GenericConversion` object (`lib/cosmos/conversions/generic_conversion.rb`), assigned to
+    the item's `read_conversion` (or `write_conversion` for the `WRITE` variant).
+  - At **read time** (when telemetry is unpacked), `GenericConversion#call(value, packet,
+    buffer)` does `eval(@code_to_eval)` — literally evaluating the captured source with
+    `value`/`packet`/`buffer` bound as locals. Whatever the last expression evaluates to is the
+    converted value. There's no sandboxing; this is intentionally the unrestricted escape hatch
+    that `POLY_READ_CONVERSION`/`SEG_POLY_READ_CONVERSION` (fixed polynomial formula, no `eval`)
+    are the safer, structured alternative to.
 
 ### Packet-level (not tied to one item)
 
@@ -132,3 +152,10 @@ turning the token stream into actual `Packet`/`Item` structures per the tables a
 
 - [Telemetry Configuration (v4 docs)](https://ballaerospace.github.io/cosmos-website/docs/v4/telemetry)
 - [Command Configuration (v4 docs)](https://ballaerospace.github.io/cosmos-website/docs/v4/command)
+- [`config_parser.rb` source, cosmos4 branch](https://github.com/BallAerospace/COSMOS/blob/cosmos4/lib/cosmos/config/config_parser.rb)
+  — the generic line tokenizer (`(keyword, parameters[])` per logical line) underlying all
+  COSMOS config files.
+- [`packet_config.rb` source, cosmos4 branch](https://github.com/BallAerospace/COSMOS/blob/cosmos4/lib/cosmos/packets/packet_config.rb)
+  — drives the per-target file walk and keyword dispatch; the generic-conversion
+  start/end state machine described above lives in `process_file`/`process_current_item`.
+- [`generic_conversion.rb` source, cosmos4 branch](https://github.com/BallAerospace/COSMOS/blob/cosmos4/lib/cosmos/conversions/generic_conversion.rb)
