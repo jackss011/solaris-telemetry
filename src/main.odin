@@ -21,6 +21,39 @@ Token :: struct {
     idx_end:   int,
 }
 
+token_print :: proc(token: Token, text: string) {
+    if token.state == TokenState.NONE {
+        fmt.println("none")
+        return
+    }
+
+    token_text := text[token.idx_start:token.idx_end]
+    switch token.state {
+        case TokenState.IDENT:
+            fmt.printfln("ident(%s)", token_text)
+        case TokenState.STR:
+            fmt.printfln("string(%s)", token_text)
+        case TokenState.INT:
+            fmt.printfln("num(%s)", token_text)
+        case TokenState.FLOAT:
+            fmt.printfln("float(%s)", token_text)
+        case TokenState.COMMENT:
+            fmt.printfln("comment(%s)", token_text)
+        case TokenState.NONE:
+    }
+}
+
+line_print :: proc(keyword: Token, params: []Token, text: string) {
+    fmt.printf("%s(", text[keyword.idx_start:keyword.idx_end])
+    for param, i in params {
+        if i > 0 {
+            fmt.printf(", ")
+        }
+        fmt.printf("%s", text[param.idx_start:param.idx_end])
+    }
+    fmt.printfln(")")
+}
+
 is_ascii_letter :: proc(b: u8) -> bool {
     return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b == '_')
 }
@@ -39,7 +72,13 @@ parse_config_file :: proc(filepath: string) {
     // token state
     token_state := TokenState.NONE
     token_idx := 0
+    line_count := 0
     escaping := false
+
+    keyword_line_count := 0
+    keyword : Token
+    params : [16]Token
+    params_i := 0
 
     for i := 0; i < len(text); i += 1 {
         b := text[i] // Yields u8
@@ -98,7 +137,8 @@ parse_config_file :: proc(filepath: string) {
                         fmt.println("ERROR: string was not completed") // no multiline string
                         return
                     case '"':
-                        token = Token{TokenState.STR, token_idx, i + 1}
+                        assert(token_idx+1 <= i)
+                        token = Token{TokenState.STR, token_idx, i+1}
                         token_state = TokenState.NONE
                 }
 
@@ -167,22 +207,28 @@ parse_config_file :: proc(filepath: string) {
                 }
         }
 
-        if token.state != TokenState.NONE {
-            token_text := text[token.idx_start:token.idx_end]
-            switch token.state {
-                case TokenState.IDENT:
-                    fmt.printfln("ident(%s)", token_text)
-                case TokenState.STR:
-                    fmt.printfln("string(%s)", token_text)
-                case TokenState.INT:
-                    fmt.printfln("num(%s)", token_text)
-                case TokenState.FLOAT:
-                    fmt.printfln("float(%s)", token_text)
-                case TokenState.COMMENT:
-                    fmt.printfln("comment(%s)", token_text)
-                case TokenState.NONE:
+        if token.state != TokenState.NONE && token.state != TokenState.COMMENT {
+            if keyword.state == TokenState.NONE {
+                keyword = token
+                keyword_line_count = line_count
+            }
+            else if line_count == keyword_line_count {
+                assert(params_i < len(params))
+                params[params_i] = token
+                params_i += 1
+            } else {
+                line_print(keyword, params[:params_i], text)
+                keyword = token
+                keyword_line_count = line_count
+                params_i = 0
             }
         }
+
+        if b == '\n' { line_count += 1 }
+    }
+
+    if keyword.state != TokenState.NONE {
+        line_print(keyword, params[:params_i], text)
     }
 }
 
