@@ -325,6 +325,38 @@ parse_config_file :: proc(filepath: string) {
     }
 }
 
+struct TlmDef {
+    target: string,
+    name: string,
+    little_endian: bool,
+    desc: string,
+}
+
+enum TlmItemType {
+    None,
+    INT, UINT, FLOAT, STRING, BLOCK, DERIVED,
+}
+
+struct TlmItemArray {
+    num: int,
+}
+
+struct TlmItemId {
+    value_str: string,
+}
+
+union TlmItemSuper {TlmItemId, TlmItemArray}
+
+struct TlmItemDef {
+    name: string,
+    bit_offset: int,
+    bit_len: int,
+    type: TlmItemType,
+    little_endian: bool,
+    desc: string,
+    super: TlmItemSuper,
+}
+
 
 main :: proc() {
     fmt.println("Hello basic parse example!")
