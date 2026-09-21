@@ -14,5 +14,5 @@ Deeper reference material that doesn't belong in the top-level `CLAUDE.md`/`READ
 | [COSMOS v4 JSON API](./cosmos-api.md) — transport, request format, method groups a client/server split would need to cover | Done |
 | [JSON-RPC 2.0](./json-rpc.md) — the actual spec underneath COSMOS's "relaxed" dialect, where it deviates, and implications for Solaris's own transport | Done |
 | [Lessons for building something better than COSMOS v4](./cosmos-lessons.md) — sourced pain points (bitfield model, pull-only updates, non-seekable logs, single-process blast radius) and what they imply for Solaris's design | Done |
-| Solaris architecture (how our own code is organized, and how/where it currently diverges from the reference above — e.g. our parser is tokenizer-only so far) | TODO |
+| Solaris architecture (how our own code is organized, and how/where it currently diverges from the reference above — see `CLAUDE.md`'s Architecture section for the current token/keyword-layer parser design; no `Packet`/`Item` semantic layer yet) | TODO |
 | Roadmap / open design questions | TODO |

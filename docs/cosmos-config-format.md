@@ -143,10 +143,16 @@ keywords, no command side at all. Whoever extends `parse_config_file` in `src/ma
 should treat this file as the full target vocabulary, and this doc as the reference for what
 each keyword's argument list should tokenize into.
 
-Right now the parser is purely a **tokenizer** (it classifies bytes into `ident`/`string`/
-`num`/`float`/`comment` runs) — it doesn't yet know that the first `ident` on a line is a
-keyword that determines how many/what type of arguments follow. That's the next layer up:
-turning the token stream into actual `Packet`/`Item` structures per the tables above.
+The parser (`src/main.odin`) now has two layers below the entry point: a token layer
+(`grab_token`) and a keyword/line layer (`grab_keyword`) that groups a line's tokens into
+`Keyword{ident, params[]}` — plus a raw-capture mode (`grab_until`) specifically for
+`GENERIC_READ_CONVERSION_START/END`-style bodies, which are deliberately *not* tokenized since
+they're inline Ruby, not COSMOS keyword syntax. What's still missing is the semantic layer on
+top: nothing yet knows that `TELEMETRY` opens a packet, that `LIMITS`/`STATE`/`UNITS` modify the
+*preceding* item, or that `ID_ITEM`'s params mean something different from `APPEND_ITEM`'s —
+every keyword currently flows through as an untyped `Keyword{ident, params}` and is only
+debug-printed, not assembled into `Packet`/`Item` structures. That interpretation step, driven
+by the keyword tables above, is the next layer to build.
 
 ## Sources
 
