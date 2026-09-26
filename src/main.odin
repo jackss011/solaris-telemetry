@@ -433,10 +433,11 @@ Tiles :: struct {
     windows: [dynamic; MAX_WINDOWS]TiledWindow,
 }
 
-// Places a window of size (w, h) at (x, y) in the tile grid, if that spot is free. Returns
-// -1 if the spot is out of bounds, overlaps an existing window, or the window store is full.
+// Places a window of size (w, h) at (x, y) in the tile grid, if that spot is within grid
+// bounds. Windows are allowed to overlap - the one placed/raised last renders on top, since
+// draw order follows array order. Returns -1 if out of bounds or the window store is full.
 tiles_new_window :: proc(tiles: ^Tiles, candidate: TiledWindow) -> int {
-    if !tiles_is_free_spot(tiles^, candidate) {
+    if !tiles_is_in_bounds(tiles^, candidate) {
         return -1
     }
     if append(&tiles.windows, candidate) == 0 {
@@ -445,25 +446,41 @@ tiles_new_window :: proc(tiles: ^Tiles, candidate: TiledWindow) -> int {
     return len(tiles.windows) - 1
 }
 
-tiles_is_free_spot :: proc(tiles: Tiles, window: TiledWindow, ignore_idx: int = -1) -> bool {
+tiles_is_in_bounds :: proc(tiles: Tiles, window: TiledWindow) -> bool {
     b := window.box
-    if b.n_x < 0 || b.n_y < 0 || b.n_x + b.n_w > tiles.n_w || b.n_y + b.n_h > tiles.n_h {
-        return false
-    }
+    return b.n_x >= 0 && b.n_y >= 0 && b.n_x + b.n_w <= tiles.n_w && b.n_y + b.n_h <= tiles.n_h
+}
 
-    for other, i in tiles.windows {
-        if i == ignore_idx {
-            continue
-        }
-        ob := other.box
-        overlap_x := b.n_x < ob.n_x + ob.n_w && ob.n_x < b.n_x + b.n_w
-        overlap_y := b.n_y < ob.n_y + ob.n_h && ob.n_y < b.n_y + b.n_h
-        if overlap_x && overlap_y {
+// Whether grid cell (x, y) falls inside any existing window's footprint.
+tiles_cell_is_free :: proc(tiles: Tiles, x: int, y: int) -> bool {
+    for w in tiles.windows {
+        b := w.box
+        if x >= b.n_x && x < b.n_x + b.n_w && y >= b.n_y && y < b.n_y + b.n_h {
             return false
         }
     }
-
     return true
+}
+
+// Whether a new window of size (w, h) could be placed with its top-left at grid cell (x, y):
+// that cell must be unoccupied, and the whole footprint must stay within the grid.
+tiles_can_place_new_window :: proc(tiles: Tiles, x: int, y: int, w: int, h: int) -> bool {
+    if !tiles_cell_is_free(tiles, x, y) {
+        return false
+    }
+    return tiles_is_in_bounds(tiles, TiledWindow{box = TiledBox{x, y, w, h}})
+}
+
+// Moves the window at win_idx to the end of tiles.windows, so it renders on top of every other
+// window (draw order follows array order). Updates win_idx callers may be tracking (e.g.
+// drag_op.win_idx) since every window at a higher index shifts down by one.
+tiles_raise_to_front :: proc(tiles: ^Tiles, win_idx: int) {
+    if win_idx == len(tiles.windows) - 1 {
+        return
+    }
+    w := tiles.windows[win_idx]
+    ordered_remove(&tiles.windows, win_idx)
+    append(&tiles.windows, w)
 }
 
 tiles_window_to_box :: proc(window: TiledWindow, tile_px: f32, origin: [2]f32) -> Box {
@@ -476,14 +493,14 @@ tiles_window_to_box :: proc(window: TiledWindow, tile_px: f32, origin: [2]f32) -
     }
 }
 
-// Moves the window at win_idx so its top edge sits at grid row up_to, leaving its column and
-// size unchanged. Refuses (leaving tiles.windows untouched) if that would push it out of the
-// grid or overlap another window. Returns whether the move happened.
+// Nudges the window at win_idx one tile up (dir < 0) or down (dir > 0), leaving its column and
+// size unchanged. Refuses (leaving tiles.windows untouched) if that would push it out of grid
+// bounds; overlapping other windows is allowed. Returns whether the move happened.
 tiles_window_move_v :: proc(tiles: ^Tiles, win_idx: int, dir: int) -> bool {
     candidate := tiles.windows[win_idx]
     candidate.box.n_y += math.sign(dir)
 
-    if !tiles_is_free_spot(tiles^, candidate, win_idx) {
+    if !tiles_is_in_bounds(tiles^, candidate) {
         return false
     }
 
@@ -491,14 +508,14 @@ tiles_window_move_v :: proc(tiles: ^Tiles, win_idx: int, dir: int) -> bool {
     return true
 }
 
-// Moves the window at win_idx so its left edge sits at grid column up_to, leaving its row and
-// size unchanged. Refuses (leaving tiles.windows untouched) if that would push it out of the
-// grid or overlap another window. Returns whether the move happened.
+// Nudges the window at win_idx one tile left (dir < 0) or right (dir > 0), leaving its row and
+// size unchanged. Refuses (leaving tiles.windows untouched) if that would push it out of grid
+// bounds; overlapping other windows is allowed. Returns whether the move happened.
 tiles_window_move_h :: proc(tiles: ^Tiles, win_idx: int, dir: int) -> bool {
     candidate := tiles.windows[win_idx]
     candidate.box.n_x += math.sign(dir)
 
-    if !tiles_is_free_spot(tiles^, candidate, win_idx) {
+    if !tiles_is_in_bounds(tiles^, candidate) {
         return false
     }
 
@@ -530,13 +547,17 @@ GRID_INIT_W :: 8
 GRID_INIT_H :: 6
 HEADER_H :: 32
 PAD :: 8
-CORNER_RADIUS :: 14
+CORNER_RADIUS :: 10
+PANEL_SEGMENTS :: 36 // corner smoothness for rounded panels - higher = less jagged
+NEW_WINDOW_TILES_W :: 3
+NEW_WINDOW_TILES_H :: 4
 
 main :: proc() {
     tile := Box{PAD, PAD, GRID_PX*GRID_INIT_W, GRID_PX*GRID_INIT_H}
     window_w, window_h := tile.w + PAD*2, tile.h + HEADER_H + PAD*2
     window := Box{0, 0, window_w, window_h}
 
+    rl.SetConfigFlags({.MSAA_4X_HINT}) // smooths rounded-rect/circle edges - must be set before InitWindow
     rl.InitWindow(i32(window.w), i32(window.h), "Solaris")
     defer rl.CloseWindow()
     rl.SetTargetFPS(60)
@@ -588,7 +609,8 @@ main :: proc() {
                 x, y := f32(iw*GRID_PX)+tile.x, f32(ih*GRID_PX)+tile.y
                 b := Box{x, y, f32(GRID_PX), f32(GRID_PX)}
                 b1 := box_inset(b, 8.0)
-                hovered := box_contains(b, mouse)
+                hovered := box_contains(b, mouse) &&
+                    tiles_can_place_new_window(tiles, iw, ih, NEW_WINDOW_TILES_W, NEW_WINDOW_TILES_H)
 
                 if hovered && rl.IsMouseButtonPressed(rl.MouseButton.LEFT) {
                     clicked = true
@@ -615,15 +637,14 @@ main :: proc() {
         }
 
         if clicked {
-            new_box := TiledBox{clicked_iw, clicked_ih, 3, 4}
+            new_box := TiledBox{clicked_iw, clicked_ih, NEW_WINDOW_TILES_W, NEW_WINDOW_TILES_H}
             new_win := TiledWindow{
                 box      = new_box,
                 range_nw = {new_box.n_w, new_box.n_w},
                 range_nh = {new_box.n_h, new_box.n_h},
             }
-            if tiles_is_free_spot(tiles, new_win) {
+            if tiles_new_window(&tiles, new_win) != -1 {
                 fmt.printfln("Adding Packet Viewer at (%d, %d)", clicked_iw, clicked_ih)
-                tiles_new_window(&tiles, new_win)
             }
         }
 
@@ -631,11 +652,32 @@ main :: proc() {
         for w in tiles.windows {
             wb := tiles_window_to_box(w, f32(GRID_PX), [2]f32{tile.x, tile.y})
             wb1 := box_inset(wb, 8.0)
+            roundness := box_corner_roundness(wb1, CORNER_RADIUS)
+
             rl.DrawRectangleRounded(
                 box_to_rl(wb1),
-                box_corner_roundness(wb1, CORNER_RADIUS),
-                16,
+                roundness,
+                PANEL_SEGMENTS,
                 rl.Color{40, 90, 140, 255},
+            )
+
+            // soft outer glow: a couple of widening, fading outlines behind the crisp border
+            for glow_i in 1..=3 {
+                glow_b := box_inset(wb1, -f32(glow_i) * 3)
+                alpha := u8(70 - glow_i * 20)
+                rl.DrawRectangleRoundedLinesEx(
+                    box_to_rl(glow_b),
+                    box_corner_roundness(glow_b, CORNER_RADIUS),
+                    PANEL_SEGMENTS, 2,
+                    rl.Color{110, 190, 255, alpha},
+                )
+            }
+
+            rl.DrawRectangleRoundedLinesEx(
+                box_to_rl(wb1),
+                roundness,
+                PANEL_SEGMENTS, 2,
+                rl.Color{160, 215, 255, 255},
             )
         }
 
@@ -649,6 +691,7 @@ main :: proc() {
             )
 
             // draw drag widgets
+            raise_idx := -1
             for w, i in tiles.windows {
                 is_moving := drag_op.active && drag_op.optype == DragType.Move && drag_op.win_idx == i
 
@@ -674,6 +717,7 @@ main :: proc() {
                     drag_op.win_idx = i
                     drag_op.mouse_start = mouse
                     drag_op.box_start = w.box
+                    raise_idx = i
                     fmt.println("dragging!");
                 }
 
@@ -684,11 +728,12 @@ main :: proc() {
                     is_moving ? rl.Color{120, 90, 140, 255} : rl.Color{200, 90, 140, 255},
                 )
             }
+
+            if raise_idx >= 0 {
+                tiles_raise_to_front(&tiles, raise_idx)
+                drag_op.win_idx = len(tiles.windows) - 1
+            }
         }
-
-   
-
-
 
         // rl.DrawFPS(13, i32(window_h) - 28)
     }
