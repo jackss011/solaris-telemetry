@@ -25,11 +25,15 @@ its `README.md`). Before building, download it manually:
 ./dev.sh
 ```
 
-This just runs `./bin/odin/odin.exe run ./src`. There is no CI config and no formatter config
-in this repo currently. There is a small test suite (`src/main_test.odin`), run with:
+This just runs `./bin/odin/odin.exe run ./src -out:build/solaris.exe` (creating `build/` first
+if needed — `odin` does not create missing output directories itself). `build/` is gitignored;
+don't let build output land in the repo root (`*.exe`/`*.pdb` there are also gitignored as a
+safety net, but the built binary belongs in `build/`, not loose at the repo root). There is no
+CI config and no formatter config in this repo currently. There is a small test suite
+(`src/main_test.odin`), run with:
 
 ```sh
-./bin/odin/odin.exe test ./src
+mkdir -p build && ./bin/odin/odin.exe test ./src -out:build/solaris_test.exe
 ```
 
 ## Architecture
@@ -64,8 +68,8 @@ in this repo currently. There is a small test suite (`src/main_test.odin`), run 
     but is disabled — treat it as a sketch/reference, not live code.
 - `src/main_test.odin` — `core:testing`-based tests, now covering all three parser layers
   (`is_ascii_letter`, `grab_token` across every token type including EOF, `grab_until` for both
-  found/not-found, `grab_keyword` including blank/comment-line skipping and EOF). Run with
-  `./bin/odin/odin.exe test ./src` (see "Build & run"). This coverage was only possible because
+  found/not-found, `grab_keyword` including blank/comment-line skipping and EOF). Run via the
+  test command in "Build & run" above. This coverage was only possible because
   `grab_token`/`grab_keyword` return structured values instead of printing — keep that pattern
   as the parser grows (see "Known issues" below).
 - `examples/simple_tlm/tlm.txt` — a sample telemetry definition in COSMOS command/telemetry
