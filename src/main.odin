@@ -397,6 +397,23 @@ box_centered :: proc(b: Box, size: [2]f32) -> Box {
     return Box{b.x + b.w/2 - size.x/2, b.y + b.h/2 - size.y/2, size.x, size.y}
 }
 
+// Boxes of the given size tucked into each corner of b (inside it).
+box_uplx :: proc(b: Box, size: [2]f32) -> Box {
+    return Box{b.x, b.y, size.x, size.y}
+}
+
+box_uprx :: proc(b: Box, size: [2]f32) -> Box {
+    return Box{b.x + b.w - size.x, b.y, size.x, size.y}
+}
+
+box_dwlx :: proc(b: Box, size: [2]f32) -> Box {
+    return Box{b.x, b.y + b.h - size.y, size.x, size.y}
+}
+
+box_dwrx :: proc(b: Box, size: [2]f32) -> Box {
+    return Box{b.x + b.w - size.x, b.y + b.h - size.y, size.x, size.y}
+}
+
 // rl.DrawRectangleRounded's `roundness` is relative to the box's shorter side, so the same
 // value produces a different-looking corner radius on differently-sized/shaped boxes. This
 // converts a fixed pixel radius into the roundness fraction that reproduces it on box `b`,
@@ -407,6 +424,24 @@ box_corner_roundness :: proc(b: Box, radius: f32) -> f32 {
         return 0
     }
     return clamp(radius * 2 / shorter, 0, 1)
+}
+
+/* ::::::::::::::::::::::::::: DRAG ::::::::::::::::::::::::::: */
+
+DragType :: enum {
+    Move,
+    ResizeUpLeft,
+    ResizeUpRight,
+    ResizeDownLeft,
+    ResizeDownRight,
+}
+
+DragOperation :: struct {
+    active: bool,
+    win_idx: int,
+    mouse_start: [2]f32,
+    box_start: TiledBox,
+    optype: DragType,
 }
 
 /* ::::::::::::::::::::::::::: TILING ::::::::::::::::::::::::::: */
@@ -431,11 +466,48 @@ Tiles :: struct {
     n_w: int,
     n_h: int,
     windows: [dynamic; MAX_WINDOWS]TiledWindow,
+    drag_op: DragOperation,
+    raised_idx: int, // window drawn on top of every other one, -1 if none
+}
+
+TilesIter :: struct {
+    tiles: ^Tiles,
+    pos: int,
+}
+
+tiles_iter :: proc(tiles: ^Tiles) -> TilesIter {
+    return TilesIter{tiles = tiles}
+}
+
+// Yields windows in draw order: every non-raised window in array order, then the raised one
+// last so it ends up on top. Windows never move in the array, so the yielded index stays valid
+// to hold elsewhere (e.g. drag_op.win_idx). Usage:
+//     it := tiles_iter(&tiles)
+//     for w, i in tiles_iter_next(&it) { ... }
+tiles_iter_next :: proc(it: ^TilesIter) -> (win: TiledWindow, idx: int, ok: bool) {
+    n := len(it.tiles.windows)
+    raised := it.tiles.raised_idx
+    has_raised := raised >= 0 && raised < n
+
+    for it.pos < n {
+        idx = it.pos
+        it.pos += 1
+        if has_raised && idx == raised {
+            continue
+        }
+        return it.tiles.windows[idx], idx, true
+    }
+
+    if has_raised && it.pos == n {
+        it.pos += 1
+        return it.tiles.windows[raised], raised, true
+    }
+    return {}, -1, false
 }
 
 // Places a window of size (w, h) at (x, y) in the tile grid, if that spot is within grid
-// bounds. Windows are allowed to overlap - the one placed/raised last renders on top, since
-// draw order follows array order. Returns -1 if out of bounds or the window store is full.
+// bounds, and raises it. Windows are allowed to overlap. Returns -1 if out of bounds or the
+// window store is full.
 tiles_new_window :: proc(tiles: ^Tiles, candidate: TiledWindow) -> int {
     if !tiles_is_in_bounds(tiles^, candidate) {
         return -1
@@ -443,7 +515,8 @@ tiles_new_window :: proc(tiles: ^Tiles, candidate: TiledWindow) -> int {
     if append(&tiles.windows, candidate) == 0 {
         return -1
     }
-    return len(tiles.windows) - 1
+    tiles.raised_idx = len(tiles.windows) - 1
+    return tiles.raised_idx
 }
 
 tiles_is_in_bounds :: proc(tiles: Tiles, window: TiledWindow) -> bool {
@@ -469,18 +542,6 @@ tiles_can_place_new_window :: proc(tiles: Tiles, x: int, y: int, w: int, h: int)
         return false
     }
     return tiles_is_in_bounds(tiles, TiledWindow{box = TiledBox{x, y, w, h}})
-}
-
-// Moves the window at win_idx to the end of tiles.windows, so it renders on top of every other
-// window (draw order follows array order). Updates win_idx callers may be tracking (e.g.
-// drag_op.win_idx) since every window at a higher index shifts down by one.
-tiles_raise_to_front :: proc(tiles: ^Tiles, win_idx: int) {
-    if win_idx == len(tiles.windows) - 1 {
-        return
-    }
-    w := tiles.windows[win_idx]
-    ordered_remove(&tiles.windows, win_idx)
-    append(&tiles.windows, w)
 }
 
 tiles_window_to_box :: proc(window: TiledWindow, tile_px: f32, origin: [2]f32) -> Box {
@@ -523,20 +584,53 @@ tiles_window_move_h :: proc(tiles: ^Tiles, win_idx: int, dir: int) -> bool {
     return true
 }
 
-/* ::::::::::::::::::::::::::: DRAG ::::::::::::::::::::::::::: */
+// Commits candidate to win_idx if it stays within grid bounds and its size stays within the
+// window's own range_nw/range_nh ([min, max] tiles). Returns whether it was committed.
+tiles_window_try_resize :: proc(tiles: ^Tiles, win_idx: int, candidate: TiledWindow) -> bool {
+    b := candidate.box
+    if b.n_w < candidate.range_nw[0] || b.n_w > candidate.range_nw[1] ||
+       b.n_h < candidate.range_nh[0] || b.n_h > candidate.range_nh[1] {
+        return false
+    }
+    if !tiles_is_in_bounds(tiles^, candidate) {
+        return false
+    }
 
-DragType :: enum {
-    Move,
-    Resize,
+    tiles.windows[win_idx] = candidate
+    return true
 }
 
-DragOperation :: struct {
-    active: bool,
-    win_idx: int,
-    mouse_start: [2]f32,
-    box_start: TiledBox,
-    optype: DragType,
+// The expand procs move one edge of the window at win_idx by one tile: outward (grow) for
+// dir > 0, inward (shrink) for dir < 0, keeping the opposite edge fixed. Refuses (leaving
+// tiles.windows untouched) if that would leave the grid or break the window's size range;
+// overlapping other windows is allowed. Returns whether the resize happened.
+
+tiles_window_expand_up :: proc(tiles: ^Tiles, win_idx: int, dir: int) -> bool {
+    candidate := tiles.windows[win_idx]
+    candidate.box.n_y -= math.sign(dir)
+    candidate.box.n_h += math.sign(dir)
+    return tiles_window_try_resize(tiles, win_idx, candidate)
 }
+
+tiles_window_expand_dw :: proc(tiles: ^Tiles, win_idx: int, dir: int) -> bool {
+    candidate := tiles.windows[win_idx]
+    candidate.box.n_h += math.sign(dir)
+    return tiles_window_try_resize(tiles, win_idx, candidate)
+}
+
+tiles_window_expand_lx :: proc(tiles: ^Tiles, win_idx: int, dir: int) -> bool {
+    candidate := tiles.windows[win_idx]
+    candidate.box.n_x -= math.sign(dir)
+    candidate.box.n_w += math.sign(dir)
+    return tiles_window_try_resize(tiles, win_idx, candidate)
+}
+
+tiles_window_expand_rx :: proc(tiles: ^Tiles, win_idx: int, dir: int) -> bool {
+    candidate := tiles.windows[win_idx]
+    candidate.box.n_w += math.sign(dir)
+    return tiles_window_try_resize(tiles, win_idx, candidate)
+}
+
 
 
 /* ::::::::::::::::::::::::::: RENDER ::::::::::::::::::::::::::: */
@@ -547,10 +641,36 @@ GRID_INIT_W :: 8
 GRID_INIT_H :: 6
 HEADER_H :: 32
 PAD :: 8
-CORNER_RADIUS :: 10
+CORNER_RADIUS :: 8
 PANEL_SEGMENTS :: 36 // corner smoothness for rounded panels - higher = less jagged
 NEW_WINDOW_TILES_W :: 3
 NEW_WINDOW_TILES_H :: 4
+
+// Draws a drag handle and starts a drag on it when clicked. Handles are drawn in tiles_iter
+// order (raised last), so if several overlap under the click the last one drawn (the frontmost)
+// overwrites drag_op and wins. The caller raises drag_op.win_idx after the loop, so the
+// iteration order stays stable while it's running.
+draw_drag_handle :: proc(tiles: ^Tiles, optype: DragType, b: Box, win_idx: int) {
+    mouse := rl.GetMousePosition()
+
+    // should we enter moving?
+    if box_contains(b, mouse) && rl.IsMouseButtonPressed(rl.MouseButton.LEFT) {
+        tiles.drag_op.active = true
+        tiles.drag_op.optype = optype
+        tiles.drag_op.win_idx = win_idx
+        tiles.drag_op.mouse_start = mouse
+        tiles.drag_op.box_start = tiles.windows[win_idx].box
+    }
+
+    is_me_active := tiles.drag_op.active && tiles.drag_op.optype == optype && tiles.drag_op.win_idx == win_idx
+
+    rl.DrawRectangleRounded(
+        box_to_rl(b),
+        box_corner_roundness(b, CORNER_RADIUS),
+        32,
+        is_me_active ? rl.Color{200, 90, 140, 255} : rl.Color{120, 90, 140, 255},
+    )
+}
 
 main :: proc() {
     tile := Box{PAD, PAD, GRID_PX*GRID_INIT_W, GRID_PX*GRID_INIT_H}
@@ -571,9 +691,8 @@ main :: proc() {
     defer rl.UnloadFont(font)
     rl.SetTextureFilter(font.texture, rl.TextureFilter.BILINEAR);
 
-    tiles := Tiles{n_w = GRID_INIT_W, n_h = GRID_INIT_H}
+    tiles := Tiles{n_w = GRID_INIT_W, n_h = GRID_INIT_H, raised_idx = -1}
     edit_mode := false
-    drag_op : DragOperation
 
     for !rl.WindowShouldClose() {
         rl.BeginDrawing()
@@ -602,7 +721,7 @@ main :: proc() {
         mouse := rl.GetMousePosition()
 
         if !rl.IsMouseButtonDown(rl.MouseButton.LEFT) {
-            drag_op = DragOperation{}
+            tiles.drag_op = DragOperation{}
         }
 
         clicked := false
@@ -645,16 +764,52 @@ main :: proc() {
             new_box := TiledBox{clicked_iw, clicked_ih, NEW_WINDOW_TILES_W, NEW_WINDOW_TILES_H}
             new_win := TiledWindow{
                 box      = new_box,
-                range_nw = {new_box.n_w, new_box.n_w},
-                range_nh = {new_box.n_h, new_box.n_h},
+                range_nw = {2, tiles.n_w},
+                range_nh = {2, tiles.n_h},
             }
             if tiles_new_window(&tiles, new_win) != -1 {
                 fmt.printfln("Adding Packet Viewer at (%d, %d)", clicked_iw, clicked_ih)
             }
         }
 
-        // render every placed window as a tiled, glowing panel on top of the grid
-        for w in tiles.windows {
+        // apply an in-progress drag before drawing, so the panel and its handles agree this frame.
+        // Each edge steps one tile per frame toward where the mouse says it should be.
+        if edit_mode && tiles.drag_op.active {
+            i := tiles.drag_op.win_idx
+            cur := tiles.windows[i].box
+            start := tiles.drag_op.box_start
+            delta_drag := (mouse - tiles.drag_op.mouse_start) / [2]f32{GRID_PX, GRID_PX}
+            delta_tiles := [2]int{int(delta_drag.x), int(delta_drag.y)}
+
+            // signed distance (in tiles) each edge still has to travel to reach its target -
+            // for expand_up/_lx positive means outward, i.e. up/left on screen
+            to_up := cur.n_y - (start.n_y + delta_tiles.y)
+            to_dw := (start.n_y + start.n_h + delta_tiles.y) - (cur.n_y + cur.n_h)
+            to_lx := cur.n_x - (start.n_x + delta_tiles.x)
+            to_rx := (start.n_x + start.n_w + delta_tiles.x) - (cur.n_x + cur.n_w)
+
+            switch tiles.drag_op.optype {
+            case .Move:
+                tiles_window_move_h(&tiles, i, start.n_x + delta_tiles.x - cur.n_x)
+                tiles_window_move_v(&tiles, i, start.n_y + delta_tiles.y - cur.n_y)
+            case .ResizeUpLeft:
+                tiles_window_expand_up(&tiles, i, to_up)
+                tiles_window_expand_lx(&tiles, i, to_lx)
+            case .ResizeUpRight:
+                tiles_window_expand_up(&tiles, i, to_up)
+                tiles_window_expand_rx(&tiles, i, to_rx)
+            case .ResizeDownLeft:
+                tiles_window_expand_dw(&tiles, i, to_dw)
+                tiles_window_expand_lx(&tiles, i, to_lx)
+            case .ResizeDownRight:
+                tiles_window_expand_dw(&tiles, i, to_dw)
+                tiles_window_expand_rx(&tiles, i, to_rx)
+            }
+        }
+
+        // render every placed window as a tiled, glowing panel on top of the grid, raised last
+        panels_it := tiles_iter(&tiles)
+        for w in tiles_iter_next(&panels_it) {
             wb := tiles_window_to_box(w, f32(GRID_PX), [2]f32{tile.x, tile.y})
             wb1 := box_inset(wb, 8.0)
             roundness := box_corner_roundness(wb1, CORNER_RADIUS)
@@ -663,26 +818,26 @@ main :: proc() {
                 box_to_rl(wb1),
                 roundness,
                 PANEL_SEGMENTS,
-                rl.Color{40, 90, 140, 255},
+                rl.Color{40, 30, 30, 255},
             )
 
-            // soft outer glow: a couple of widening, fading outlines behind the crisp border
-            for glow_i in 1..=3 {
-                glow_b := box_inset(wb1, -f32(glow_i) * 3)
-                alpha := u8(70 - glow_i * 20)
-                rl.DrawRectangleRoundedLinesEx(
-                    box_to_rl(glow_b),
-                    box_corner_roundness(glow_b, CORNER_RADIUS),
-                    PANEL_SEGMENTS, 2,
-                    rl.Color{110, 190, 255, alpha},
-                )
-            }
+            // // soft outer glow: a couple of widening, fading outlines behind the crisp border
+            // for glow_i in 1..=3 {
+            //     glow_b := box_inset(wb1, -f32(glow_i) * 3)
+            //     alpha := u8(70 - glow_i * 20)
+            //     rl.DrawRectangleRoundedLinesEx(
+            //         box_to_rl(glow_b),
+            //         box_corner_roundness(glow_b, CORNER_RADIUS),
+            //         PANEL_SEGMENTS, 2,
+            //         rl.Color{110, 190, 255, alpha},
+            //     )
+            // }
 
             rl.DrawRectangleRoundedLinesEx(
                 box_to_rl(wb1),
                 roundness,
-                PANEL_SEGMENTS, 2,
-                rl.Color{160, 215, 255, 255},
+                PANEL_SEGMENTS, 1.5,
+                rl.Color{140, 80, 80, 255},
             )
         }
 
@@ -695,48 +850,28 @@ main :: proc() {
                 rl.Color{0, 0, 0, 33},
             )
 
-            // draw drag widgets
-            raise_idx := -1
-            for w, i in tiles.windows {
-                is_moving := drag_op.active && drag_op.optype == DragType.Move && drag_op.win_idx == i
+            // draw drag widgets, in the same order as the panels
+            handles_it := tiles_iter(&tiles)
+            for w, i in tiles_iter_next(&handles_it) {
+                box_panel := tiles_window_to_box(w, f32(GRID_PX), [2]f32{tile.x, tile.y})
 
-                if is_moving {
-                    delta_drag := (mouse - drag_op.mouse_start) / [2]f32{GRID_PX, GRID_PX}
-                    delta_tiles := [2]int{int(delta_drag.x), int(delta_drag.y)}
-                    delta_tiles -= [2]int{w.box.n_x - drag_op.box_start.n_x, w.box.n_y - drag_op.box_start.n_y}
+                // central move handle
+                box_move := box_centered(box_panel, {box_panel.w*0.6, 32})
+                draw_drag_handle(&tiles, DragType.Move, box_move, i)
 
-                    tiles_window_move_h(&tiles, i, delta_tiles.x)
-                    tiles_window_move_v(&tiles, i, delta_tiles.y)
-                }
-
-                wb := tiles_window_to_box(tiles.windows[i], f32(GRID_PX), [2]f32{tile.x, tile.y})
-                b := box_centered(wb, {GRID_PX/3*4, 15})
-                b.y -= b.h/3
-
-                // should we enter moving?
-                if !drag_op.active &&
-                    box_contains(b, mouse) &&
-                    rl.IsMouseButtonPressed(rl.MouseButton.LEFT) {
-                    drag_op.active = true
-                    drag_op.optype = DragType.Move
-                    drag_op.win_idx = i
-                    drag_op.mouse_start = mouse
-                    drag_op.box_start = w.box
-                    raise_idx = i
-                    fmt.println("dragging!");
-                }
-
-                rl.DrawRectangleRounded(
-                    box_to_rl(b),
-                    box_corner_roundness(b, CORNER_RADIUS),
-                    32,
-                    is_moving ? rl.Color{120, 90, 140, 255} : rl.Color{200, 90, 140, 255},
-                )
+                // corner handles sit just inside the visible (inset) panel
+                box_corners := box_inset(box_panel, 16)
+                resize_size := [2]f32{32, 32}
+                draw_drag_handle(&tiles, DragType.ResizeUpLeft,    box_uplx(box_corners, resize_size), i)
+                draw_drag_handle(&tiles, DragType.ResizeUpRight,   box_uprx(box_corners, resize_size), i)
+                draw_drag_handle(&tiles, DragType.ResizeDownLeft,  box_dwlx(box_corners, resize_size), i)
+                draw_drag_handle(&tiles, DragType.ResizeDownRight, box_dwrx(box_corners, resize_size), i)
             }
 
-            if raise_idx >= 0 {
-                tiles_raise_to_front(&tiles, raise_idx)
-                drag_op.win_idx = len(tiles.windows) - 1
+            // raising just sets an index - done after the loop so the iteration order above
+            // doesn't shift mid-loop
+            if tiles.drag_op.active {
+                tiles.raised_idx = tiles.drag_op.win_idx
             }
         }
 
