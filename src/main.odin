@@ -636,6 +636,7 @@ tiles_window_expand_rx :: proc(tiles: ^Tiles, win_idx: int, dir: int) -> bool {
 /* ::::::::::::::::::::::::::: RENDER ::::::::::::::::::::::::::: */
 
 BACKGROUND_COLOR := rl.Color{15, 15, 20, 255}
+ui_font: rl.Font // loaded in main after InitWindow - raylib can't load fonts before a window exists
 GRID_PX :: 100
 GRID_INIT_W :: 8
 GRID_INIT_H :: 6
@@ -668,7 +669,105 @@ draw_drag_handle :: proc(tiles: ^Tiles, optype: DragType, b: Box, win_idx: int) 
         box_to_rl(b),
         box_corner_roundness(b, CORNER_RADIUS),
         32,
-        is_me_active ? rl.Color{200, 90, 140, 255} : rl.Color{120, 90, 140, 255},
+        is_me_active ? rl.Color{140, 90, 80, 255} : rl.Color{100, 70, 70, 255},
+    )
+}
+
+// Draws the tile grid with its top-left at origin, highlighting the hovered cell if a new window
+// could be placed there. Returns whether such a cell was clicked this frame, and which one.
+draw_grid :: proc(tiles: Tiles, origin: Box, edit_mode: bool) -> (clicked: bool, clicked_cell: [2]int) {
+    mouse := rl.GetMousePosition()
+
+    for iw in 0..<tiles.n_w {
+        for ih in 0..<tiles.n_h {
+            x, y := f32(iw*GRID_PX)+origin.x, f32(ih*GRID_PX)+origin.y
+            b := Box{x, y, f32(GRID_PX), f32(GRID_PX)}
+            b1 := box_inset(b, 8.0)
+            hovered := box_contains(b, mouse) &&
+                tiles_can_place_new_window(tiles, iw, ih, NEW_WINDOW_TILES_W, NEW_WINDOW_TILES_H)
+
+            if hovered && rl.IsMouseButtonPressed(rl.MouseButton.LEFT) {
+                clicked = true
+                clicked_cell = {iw, ih}
+            }
+
+            rl.DrawRectangleRounded(
+                box_to_rl(b1),
+                box_corner_roundness(b1, CORNER_RADIUS),
+                16,   // segments
+                hovered ? rl.Color{45, 40, 40, 255} : rl.Color{30, 26, 26, 255}, // fill, translucent
+            )
+
+            if hovered && edit_mode {
+                text_size := rl.MeasureTextEx(ui_font, "add", 20, 1)
+                text_pos := rl.Vector2{
+                    b.x + b.w/2 - text_size.x/2,
+                    b.y + b.h/2 - text_size.y/2,
+                }
+                rl.DrawTextEx(ui_font, "add", text_pos, 20, 1, rl.Color{200, 210, 220, 255})
+            }
+        }
+    }
+    return
+}
+
+// Draws the header strip along the bottom of window: the "EDIT" badge on the left while in edit
+// mode, and the "SOLARIS" logo on the right.
+draw_header :: proc(window: Box, edit_mode: bool) {
+    label_size := rl.MeasureTextEx(ui_font, "SOLARIS", HEADER_H, 2)
+    label_color := rl.Color{207/3, 210/4, 220/4, 255}
+
+    if edit_mode {
+        rl.DrawTextEx(ui_font, "EDIT", rl.Vector2{PAD, window.h - PAD - HEADER_H + 3}, HEADER_H, 2, rl.Color{230, 180, 60, 255})
+    }
+
+    rl.DrawTextEx(ui_font, "SOLARIS",
+        rl.Vector2{window.w - label_size.x - PAD*2, window.h - PAD - HEADER_H + 3},
+        HEADER_H,
+        2, label_color)
+}
+
+// Draws a window as a rounded panel filling its tiles' screen box wb, inset so neighbouring
+// panels don't touch.
+draw_panel :: proc(wb: Box) {
+    wb1 := box_inset(wb, 8.0)
+    roundness := box_corner_roundness(wb1, CORNER_RADIUS)
+
+    rl.DrawRectangleRounded(
+        box_to_rl(wb1),
+        roundness,
+        PANEL_SEGMENTS,
+        rl.Color{40, 30, 30, 255},
+    )
+
+    // // soft outer glow: a couple of widening, fading outlines behind the crisp border
+    // for glow_i in 1..=3 {
+    //     glow_b := box_inset(wb1, -f32(glow_i) * 3)
+    //     alpha := u8(70 - glow_i * 20)
+    //     rl.DrawRectangleRoundedLinesEx(
+    //         box_to_rl(glow_b),
+    //         box_corner_roundness(glow_b, CORNER_RADIUS),
+    //         PANEL_SEGMENTS, 2,
+    //         rl.Color{110, 190, 255, alpha},
+    //     )
+    // }
+
+    rl.DrawRectangleRoundedLinesEx(
+        box_to_rl(wb1),
+        roundness,
+        PANEL_SEGMENTS, 1.5,
+        rl.Color{140, 80, 80, 255},
+    )
+}
+
+// Dims the grid area b with a translucent overlay while in edit mode, so the edit handles drawn
+// after it stand out.
+draw_edit_shadow :: proc(b: Box) {
+    rl.DrawRectangleRounded( // TODO: normal rectangle
+        box_to_rl(b),
+        box_corner_roundness(b, CORNER_RADIUS),
+        16,
+        rl.Color{0, 0, 0, 66},
     )
 }
 
@@ -687,93 +786,49 @@ main :: proc() {
     rl.SetWindowIcon(icon)
     rl.UnloadImage(icon)
 
-    font := rl.LoadFontEx("assets/fonts/ShareTech-Regular.ttf", 32, nil, 0);
-    defer rl.UnloadFont(font)
-    rl.SetTextureFilter(font.texture, rl.TextureFilter.BILINEAR);
+    ui_font = rl.LoadFontEx("assets/fonts/ShareTech-Regular.ttf", 32, nil, 0);
+    defer rl.UnloadFont(ui_font)
+    rl.SetTextureFilter(ui_font.texture, rl.TextureFilter.BILINEAR);
 
     tiles := Tiles{n_w = GRID_INIT_W, n_h = GRID_INIT_H, raised_idx = -1}
     edit_mode := false
 
     for !rl.WindowShouldClose() {
+        // beign
         rl.BeginDrawing()
         defer rl.EndDrawing()
+        rl.ClearBackground(BACKGROUND_COLOR)
 
+        // input handling
         if rl.IsKeyPressed(rl.KeyboardKey.TAB) {
             edit_mode = !edit_mode
         }
-
-        // backgorund
-        rl.ClearBackground(BACKGROUND_COLOR)
-
-        // logo
-        label_size := rl.MeasureTextEx(font, "SOLARIS", HEADER_H, 2)
-        label_color := rl.Color{207/3, 210/4, 220/4, 255}
-
-        if edit_mode {
-            rl.DrawTextEx(font, "EDIT", rl.Vector2{PAD, window_h - PAD - HEADER_H + 3}, HEADER_H, 2, rl.Color{230, 180, 60, 255})
-        }
-
-        rl.DrawTextEx(font, "SOLARIS",
-            rl.Vector2{window_w - label_size.x - PAD*2, window_h - PAD - HEADER_H + 3}, 
-            HEADER_H, 
-            2, label_color)
-
         mouse := rl.GetMousePosition()
 
         if !rl.IsMouseButtonDown(rl.MouseButton.LEFT) {
             tiles.drag_op = DragOperation{}
         }
 
-        clicked := false
-        clicked_iw, clicked_ih : int = 0, 0
+        // RENDER: header
+        draw_header(window, edit_mode)
+  
+        // RENDER: bg grid
+        clicked, clicked_cell := draw_grid(tiles, tile, edit_mode)
 
-        // grid
-        for iw in 0..<tiles.n_w {
-            for ih in 0..<tiles.n_h {
-                x, y := f32(iw*GRID_PX)+tile.x, f32(ih*GRID_PX)+tile.y
-                b := Box{x, y, f32(GRID_PX), f32(GRID_PX)}
-                b1 := box_inset(b, 8.0)
-                hovered := box_contains(b, mouse) &&
-                    tiles_can_place_new_window(tiles, iw, ih, NEW_WINDOW_TILES_W, NEW_WINDOW_TILES_H)
-
-                if hovered && rl.IsMouseButtonPressed(rl.MouseButton.LEFT) {
-                    clicked = true
-                    clicked_iw = iw
-                    clicked_ih = ih
-                }
-
-                rl.DrawRectangleRounded(
-                    box_to_rl(b1),
-                    box_corner_roundness(b1, CORNER_RADIUS),
-                    16,   // segments
-                    hovered ? rl.Color{45, 40, 40, 255} : rl.Color{30, 26, 26, 255}, // fill, translucent
-                )
-
-                if hovered {
-                    text_size := rl.MeasureTextEx(font, "add", 20, 1)
-                    text_pos := rl.Vector2{
-                        b.x + b.w/2 - text_size.x/2,
-                        b.y + b.h/2 - text_size.y/2,
-                    }
-                    rl.DrawTextEx(font, "add", text_pos, 20, 1, rl.Color{200, 210, 220, 255})
-                }
-            }
-        }
-
+        // UPDATE: new window
         if clicked {
-            new_box := TiledBox{clicked_iw, clicked_ih, NEW_WINDOW_TILES_W, NEW_WINDOW_TILES_H}
+            new_box := TiledBox{clicked_cell.x, clicked_cell.y, NEW_WINDOW_TILES_W, NEW_WINDOW_TILES_H}
             new_win := TiledWindow{
                 box      = new_box,
                 range_nw = {2, tiles.n_w},
                 range_nh = {2, tiles.n_h},
             }
             if tiles_new_window(&tiles, new_win) != -1 {
-                fmt.printfln("Adding Packet Viewer at (%d, %d)", clicked_iw, clicked_ih)
+                fmt.printfln("Adding Packet Viewer at (%d, %d)", clicked_cell.x, clicked_cell.y)
             }
         }
 
-        // apply an in-progress drag before drawing, so the panel and its handles agree this frame.
-        // Each edge steps one tile per frame toward where the mouse says it should be.
+        // UPDATE: panels position if dragging
         if edit_mode && tiles.drag_op.active {
             i := tiles.drag_op.win_idx
             cur := tiles.windows[i].box
@@ -807,48 +862,16 @@ main :: proc() {
             }
         }
 
-        // render every placed window as a tiled, glowing panel on top of the grid, raised last
+        // RENDER: panels
         panels_it := tiles_iter(&tiles)
         for w in tiles_iter_next(&panels_it) {
-            wb := tiles_window_to_box(w, f32(GRID_PX), [2]f32{tile.x, tile.y})
-            wb1 := box_inset(wb, 8.0)
-            roundness := box_corner_roundness(wb1, CORNER_RADIUS)
-
-            rl.DrawRectangleRounded(
-                box_to_rl(wb1),
-                roundness,
-                PANEL_SEGMENTS,
-                rl.Color{40, 30, 30, 255},
-            )
-
-            // // soft outer glow: a couple of widening, fading outlines behind the crisp border
-            // for glow_i in 1..=3 {
-            //     glow_b := box_inset(wb1, -f32(glow_i) * 3)
-            //     alpha := u8(70 - glow_i * 20)
-            //     rl.DrawRectangleRoundedLinesEx(
-            //         box_to_rl(glow_b),
-            //         box_corner_roundness(glow_b, CORNER_RADIUS),
-            //         PANEL_SEGMENTS, 2,
-            //         rl.Color{110, 190, 255, alpha},
-            //     )
-            // }
-
-            rl.DrawRectangleRoundedLinesEx(
-                box_to_rl(wb1),
-                roundness,
-                PANEL_SEGMENTS, 1.5,
-                rl.Color{140, 80, 80, 255},
-            )
+            b := tiles_window_to_box(w, f32(GRID_PX), [2]f32{tile.x, tile.y})
+            draw_panel(b)
         }
 
+        // RENDER: panels move/resize handles if edit mode
         if edit_mode {
-            // shadow rest of the screen
-            rl.DrawRectangleRounded( // TODO: normal rectangle
-                box_to_rl(tile),
-                box_corner_roundness(tile, CORNER_RADIUS),
-                16,
-                rl.Color{0, 0, 0, 33},
-            )
+            draw_edit_shadow(tile)
 
             // draw drag widgets, in the same order as the panels
             handles_it := tiles_iter(&tiles)
@@ -875,6 +898,7 @@ main :: proc() {
             }
         }
 
+        // RENDER: debug
         // rl.DrawFPS(13, i32(window_h) - 28)
     }
 }
