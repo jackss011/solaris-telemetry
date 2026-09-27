@@ -11,8 +11,8 @@ to each other yet:
 1. A telemetry-definition **parser** that has grown past a bare tokenizer into a real two-layer
    design (see "Architecture" below) — it parses `examples/simple_tlm/tlm.txt` and debug-prints
    what it found. Parsed keywords aren't yet turned into semantic `Packet`/`Item` structures.
-2. A working **raylib UI** — a tile grid you click to spawn draggable placeholder window panels,
-   with a Tab-toggled edit mode for moving them around. This is what actually runs (`main`'s
+2. A working **raylib UI** — a grid of slots you click to spawn placeholder panels, with a
+   Tab-toggled edit mode for moving and resizing them. This is what actually runs (`main`'s
    entry point is the UI, not the parser) but it has no knowledge of parsed telemetry yet; panels
    are generic placeholders, not real data.
 
@@ -76,15 +76,20 @@ To produce a distributable build (release-optimized, no console window, zipped w
     all flow through as generic `Keyword{ident, params}` values with no COSMOS-aware structure
     built on top. Turning that into real `Packet`/`Item` data (per
     `docs/cosmos/config-format.md`'s keyword tables) is the next layer up.
-  - **The raylib UI** (`Box`, `TiledBox`/`TiledWindow`/`Tiles`, `DragOperation`, and `main`'s
-    render loop) — a tile grid + draggable window-panel prototype that is genuinely live (it's
-    `main`'s entry point) but **not connected to the parser above**: clicking an empty grid cell
-    spawns a fixed-size placeholder panel, not a real parsed telemetry packet. See
-    [`docs/solaris-architecture.md`](./docs/solaris-architecture.md) for the full design
-    (tile-grid model, z-ordering, drag/edit-mode mechanics, render loop, known gaps).
+  - **The raylib UI** (`Rect`, `Tile`/`Panel`/`Slots`, `DragOperation`, and `main`'s render
+    loop) — a slot-grid + draggable/resizable panel prototype that is genuinely live (it's
+    `main`'s entry point) but **not connected to the parser above**: clicking a free slot spawns
+    a fixed-size placeholder panel, not a real parsed telemetry packet. Vocabulary, used
+    consistently in names: a **slot** is one grid cell, a **tile** is a rectangle of slots
+    (ints, pure geometry), a **panel** is attached to a tile and is what's drawn (float `Rect`,
+    and later its theme/content), **window** only ever means the OS window, and the bottom strip
+    is the **status bar**. See [`docs/solaris-architecture.md`](./docs/solaris-architecture.md)
+    for the full design (slot model, z-ordering, drag/edit-mode mechanics, render loop, known
+    gaps).
 - `src/main_test.odin` — `core:testing`-based tests, now covering all three parser layers
   (`is_ascii_letter`, `grab_token` across every token type including EOF, `grab_until` for both
-  found/not-found, `grab_keyword` including blank/comment-line skipping and EOF). Run via the
+  found/not-found, `grab_keyword` including blank/comment-line skipping and EOF), plus the UI's
+  `slots_panel_expand_*` resize procs. Run via the
   test command in "Build & run" above. This coverage was only possible because
   `grab_token`/`grab_keyword` return structured values instead of printing — keep that pattern
   as the parser grows (see "Known issues" below).
@@ -120,8 +125,9 @@ upstream) worth having open while working here.
   positional params than that will `assert` (crash), not error gracefully. Worth keeping in mind
   if `examples/simple_tlm/tlm.txt` grows lines with long param lists (e.g. multi-segment
   `SEG_POLY_READ_CONVERSION` chains).
-- The raylib UI has **no test coverage at all** (only the parser's token/keyword layers are
-  tested — see above), and its debug prints (`fmt.println`/`fmt.printfln`) go nowhere in the
+- The raylib UI is **mostly untested** (only the `slots_panel_expand_*` resize procs have
+  tests — the iterator, moves, placement and all drag/render logic in `main` don't), and its
+  debug prints (`fmt.println`/`fmt.printfln`) go nowhere in the
   packaged `-subsystem:windows` release build (see `package.sh`) since it has no console attached.
   See `docs/solaris-architecture.md`'s "Known gaps" for this and other UI-side loose ends.
 
@@ -130,7 +136,7 @@ upstream) worth having open while working here.
 - Odin package `main`, procedures in `snake_case`, types in `PascalCase` (see `TokenType`
   enum in `main.odin`) — follow existing style rather than introducing a different convention.
 - The raylib UI (`main`) and the parser (`parse_config_file`) are currently independent — the
-  eventual goal is feeding real parsed telemetry definitions into the tile/window-manager UI in
+  eventual goal is feeding real parsed telemetry definitions into the slot/panel UI in
   place of today's generic placeholder panels. Keep that direction in mind when extending either
   side (e.g. a `Packet`/`Item` semantic layer should shape itself around what the UI will need to
   display, not just around `tlm.txt`'s keyword syntax).

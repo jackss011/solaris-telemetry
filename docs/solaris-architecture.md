@@ -14,175 +14,212 @@ not a call graph:
    `parse_config_file`, plus the dormant `TlmDef`/`TlmItemDef` data-model types). This is the
    part `CLAUDE.md`'s Architecture section documents in detail, and the part
    [`cosmos/config-format.md`](./cosmos/config-format.md) is the semantic reference for.
-2. **The tile/window-manager UI** (`Box`, `TiledBox`/`TiledWindow`/`Tiles`, `DragOperation`, and
-   `main`'s render loop). This is what actually runs when you launch the program, and it's what
-   the rest of this doc covers.
+2. **The slot/panel layout UI** (`Rect`, `Tile`/`Panel`/`Slots`, `DragOperation`, and `main`'s
+   render loop). This is what actually runs when you launch the program, and it's what the rest
+   of this doc covers.
 
 **These are not wired together.** `main` no longer calls `parse_config_file` — the old
 entry point that did (`fmt.println("Hello basic parse example!"); parse_config_file(...)`) is
-still there, but commented out, sitting right above the tiling constants. `main` today launches a
-generic tile grid and lets you click a cell to spawn a fixed-size placeholder panel (labeled
+still there, but commented out, sitting right above the `RECT` section. `main` today launches a
+generic slot grid and lets you click a free slot to spawn a fixed-size placeholder panel (labeled
 "Packet Viewer" only in a debug print, not from any parsed definition) — it has no knowledge of
-`tlm.txt`, `TlmDef`, or `TlmItemDef` at all. Turning "click a cell" into "click a cell and pick a
+`tlm.txt`, `TlmDef`, or `TlmItemDef` at all. Turning "click a slot" into "click a slot and pick a
 real parsed telemetry packet to display" is the integration step that doesn't exist yet.
 
-## `Box`: pixel-space rectangles
+## Vocabulary
 
-`Box :: struct { x, y, w, h: f32 }` is the one geometry primitive the UI uses, always in pixel
-space. Its helpers:
+The UI uses these words consistently — in type names, proc prefixes and local variable names:
 
-- `box_inset(b, inset)` — shrinks a box by `inset` on all sides (used to put visual padding
-  between a tile's/window's hit-box and its drawn fill). A **negative** inset grows the box
-  instead, which the window glow effect (below) relies on.
-- `box_to_rl(b)` — converts to `rl.Rectangle` for raylib draw calls.
-- `box_contains(b, point)` — half-open bounds test (`x` in `[b.x, b.x+b.w)`, same for `y`), used
-  for both grid-cell hover and drag-handle hit-testing.
-- `box_centered(b, size)` — a box of `size` centered inside `b`, used to place the small
-  draggable handle above each window panel.
-- `box_corner_roundness(b, radius)` — `rl.DrawRectangleRounded`'s `roundness` parameter is a
-  *fraction of the box's shorter side*, so the same `roundness` value produces a different-looking
-  corner radius on differently-sized/shaped boxes. This inverts that: given a desired **fixed
-  pixel radius**, it returns the `roundness` fraction that reproduces it on box `b` specifically.
-  Every rounded-rect draw in `main` goes through this instead of a raw `roundness` literal, which
-  is why every rounded corner in the app (grid cells, window panels, drag handles) reads as the
-  same visual radius regardless of the shape's aspect ratio.
-- `box_end(b)` — returns `(x+w, y+h)`. Currently unused (dead code) — an earlier version of the
-  window-sizing math used it; `main` now computes `window_w`/`window_h` directly.
+| Word | Meaning | Units |
+|---|---|---|
+| **slot** | One cell of the layout grid. `Slots` is the grid itself (plus the panels placed on it). | int |
+| **tile** | A rectangle of whole slots — pure geometry, no theme or content. | int |
+| **panel** | What's attached to a tile and drawn on screen. Its `Rect` is derived from its tile each frame; it's what carries (in future) a UI theme and telemetry content. | float px (drawn) |
+| **rect** | Any rectangle in screen pixels (`Rect`). | float px |
+| **window** | Only ever the OS window raylib opens — never a panel. | px |
+| **status bar** | The strip along the bottom of the window ("EDIT" badge, "SOLARIS" logo). | px |
 
-## The tile-grid model
+Naming follows from that: `*_rect` locals are pixels, `tile`/`Tile` values are slots, and index
+variables are named after what they index (`panel_idx`, `raised_panel`).
 
-Grid position/size is tracked in **tile units** (small integers), separately from the pixel-space
-`Box` used for drawing — `tiles_window_to_box` is the only place the two meet.
+## `Rect`: pixel-space rectangles
+
+`Rect :: struct { x, y, w, h: f32 }` is the one pixel-space geometry primitive the UI uses. Its
+helpers:
+
+- `rect_inset(r, inset)` — shrinks a rect by `inset` in total (`inset/2` on each side), used to put
+  visual padding between a slot's/panel's hit area and its drawn fill. A **negative** inset grows
+  the rect instead, which the (currently commented-out) panel glow effect relies on.
+- `rect_to_rl(r)` — converts to `rl.Rectangle` for raylib draw calls.
+- `rect_contains(r, point)` — half-open bounds test (`x` in `[r.x, r.x+r.w)`, same for `y`), used
+  for both slot hover and drag-handle hit-testing.
+- `rect_centered(r, size)` — a rect of `size` centered inside `r`, used for each panel's move
+  handle.
+- `rect_uplx`/`rect_uprx`/`rect_dwlx`/`rect_dwrx(r, size)` — a rect of `size` tucked into each
+  corner of `r`, used for the four resize handles.
+- `rect_corner_roundness(r, radius)` — `rl.DrawRectangleRounded`'s `roundness` parameter is a
+  *fraction of the rect's shorter side*, so the same `roundness` value produces a different-looking
+  corner radius on differently-sized/shaped rects. This inverts that: given a desired **fixed
+  pixel radius**, it returns the `roundness` fraction that reproduces it on rect `r` specifically.
+  Every rounded-rect draw goes through this instead of a raw `roundness` literal, which is why
+  every rounded corner in the app (slots, panels, drag handles) reads as the same visual radius
+  regardless of the shape's aspect ratio.
+- `rect_end(r)` — returns `(x+w, y+h)`. Currently unused.
+
+## The slot model
+
+Layout position/size is tracked in **slot units** (small integers), separately from the
+pixel-space `Rect` used for drawing — `tile_to_rect` is the only place the two meet.
 
 ```odin
-TiledBox :: struct { n_x, n_y, n_w, n_h: int }   // grid-cell coordinates + size
+Tile :: struct { x, y, w, h: int }   // top-left slot + size, in slots
 
-TiledWindow :: struct {
-    box:      TiledBox,
-    range_nw: [2]int,   // reserved: (min, max) allowed width in tiles — not read anywhere yet
-    range_nh: [2]int,   // reserved: (min, max) allowed height in tiles — not read anywhere yet
+Panel :: struct {
+    tile:     Tile,
+    min_size: [2]int,   // smallest allowed tile size, in slots
+    max_size: [2]int,   // largest allowed tile size, in slots
 }
 
-Tiles :: struct {
-    n_w, n_h: int
-    windows:  [dynamic; MAX_WINDOWS]TiledWindow   // fixed-capacity, no heap allocation
+Slots :: struct {
+    w, h:         int,                              // grid size, in slots
+    panels:       [dynamic; MAX_PANELS]Panel,      // fixed-capacity, no heap allocation
+    drag_op:      DragOperation,
+    raised_panel: int,                              // index of the panel drawn on top, -1 if none
 }
 ```
 
-`windows` uses Odin's `[dynamic; N]T` fixed-capacity dynamic array (see the "Bounded/inline
+`panels` uses Odin's `[dynamic; N]T` fixed-capacity dynamic array (see the "Bounded/inline
 growable arrays" section of [`odin-language-overview.md`](./odin-language-overview.md)) —
-`append`/`ordered_remove`/indexing all work normally, but it never allocates and silently refuses
-to grow past `MAX_WINDOWS` (128).
+`append`/indexing work normally, but it never allocates and refuses to grow past `MAX_PANELS`
+(128).
 
-**Windows are allowed to overlap by design.** There is no general occupancy check between
-existing windows — `tiles_is_in_bounds` only checks grid bounds, nothing else. The only place
-occupancy is checked at all is *placing a brand-new window from an empty grid cell*
-(`tiles_can_place_new_window`/`tiles_cell_is_free`), so you can't accidentally spawn a new window
-directly on top of an existing one — but once placed, windows can be dragged freely on top of
-each other.
+**Panels are allowed to overlap by design.** There is no general occupancy check between existing
+panels — `slots_contains_tile` only checks grid bounds. The only place occupancy is checked at all
+is *placing a brand-new panel from a free slot* (`slots_can_place_panel`/`slots_is_free`), so you
+can't accidentally spawn a panel directly on top of an existing one — but once placed, panels can
+be dragged and resized freely on top of each other.
 
-**Z-order is just array order.** There's no separate z-index field: both render loops in `main`
-draw `tiles.windows` front-to-back in array order, so "on top" literally means "later in the
-array." `tiles_raise_to_front(tiles, win_idx)` implements "bring to front" by removing that
-window and re-appending it — nothing fancier. Newly created windows are already appended last, so
-they're on top by construction with no extra step needed.
+**Z-order is one index, not array order.** Panels never move within `slots.panels`, so any index
+held elsewhere (like `drag_op.panel_idx`) stays valid. `raised_panel` names the one panel drawn on
+top; raising a panel just sets that index. `slots_panels`/`slots_panels_next` is an Odin-style
+iterator yielding panels in draw order — every other panel in array order, then the raised one
+last:
 
-Tile-grid procedures, all in `Tiles`' section of `main.odin`:
+```odin
+it := slots_panels(&slots)
+for p, i in slots_panels_next(&it) { ... }
+```
+
+Only one panel is "raised" at a time: raising A then B puts A back at its array position rather
+than second from the top. Newly added panels are raised automatically.
+
+Slot-grid procedures, all in the `SLOTS` section of `main.odin`:
 
 | Proc | Purpose |
 |---|---|
-| `tiles_new_window(tiles, candidate)` | Appends `candidate` if in bounds; returns its index or `-1` |
-| `tiles_is_in_bounds(tiles, window)` | Pure grid-bounds check (no overlap check) |
-| `tiles_cell_is_free(tiles, x, y)` | Whether grid cell `(x,y)` falls inside any existing window |
-| `tiles_can_place_new_window(tiles, x, y, w, h)` | Combines the two above, for the "click empty cell to add" flow |
-| `tiles_raise_to_front(tiles, win_idx)` | Moves a window to the end of the array (z-order) |
-| `tiles_window_to_box(window, tile_px, origin)` | Tile-grid coords → pixel-space `Box` |
-| `tiles_window_move_h`/`_v(tiles, win_idx, dir)` | Nudges one axis by `sign(dir)` tiles, refusing (leaving state untouched) if that goes out of bounds |
+| `slots_add_panel(slots, candidate)` | Appends `candidate` if its tile is in bounds, and raises it; returns its index or `-1` |
+| `slots_contains_tile(slots, tile)` | Pure grid-bounds check (no overlap check) |
+| `slots_is_free(slots, x, y)` | Whether slot `(x,y)` is outside every panel's tile |
+| `slots_can_place_panel(slots, x, y, w, h)` | Combines the two above, for the "click a free slot to add" flow |
+| `slots_panels` / `slots_panels_next` | Draw-order iterator (raised panel last) |
+| `tile_to_rect(tile, slot_px, origin)` | Slot coords → pixel-space `Rect` |
+| `slots_panel_move_h`/`_v(slots, panel_idx, dir)` | Moves the panel's tile one slot along one axis by `sign(dir)`, refusing (leaving state untouched) if that goes out of bounds |
+| `slots_panel_expand_up`/`_dw`/`_lx`/`_rx(slots, panel_idx, dir)` | Moves one edge one slot — outward (grow) for `dir > 0`, inward (shrink) for `dir < 0` — keeping the opposite edge fixed |
+| `slots_panel_try_resize(slots, panel_idx, candidate)` | Shared check behind the expand procs: commits only if the tile stays in bounds and within `min_size`/`max_size` |
+
+Note the sign convention differs between the two families: `move_*` take a *screen* direction
+(`dir < 0` = up/left), while `expand_*` take *outward vs. inward* for that edge — so
+`slots_panel_expand_up(…, 1)` moves the top edge up the screen.
 
 ## Drag / edit mode
 
-`edit_mode` is a `bool` toggled by `Tab` (`rl.IsKeyPressed(.TAB)`). When on: the grid dims under a
-translucent overlay, and every placed window gets a small pill-shaped drag handle centered above
-it (`box_centered` + a fixed y-offset).
+`edit_mode` is a `bool` toggled by `Tab` (`rl.IsKeyPressed(.TAB)`). When on: the slot area dims
+under a translucent overlay, and every panel gets a pill-shaped move handle centered on it
+(`rect_centered`, 60% of the panel's width) plus a square resize handle in each corner.
 
 ```odin
 DragOperation :: struct {
     active:      bool,
-    win_idx:     int,
+    panel_idx:   int,
     mouse_start: [2]f32,     // mouse position when the drag began
-    box_start:   TiledBox,   // the window's tile position when the drag began
-    optype:      DragType,   // Move (implemented) or Resize (defined, not implemented)
+    tile_start:  Tile,       // the panel's tile when the drag began
+    optype:      DragType,   // Move, or one of the four Resize* corners
 }
 ```
 
-Two things about this that are easy to get wrong (both were bugs at some point during
-development, which is why they're called out here):
+`draw_drag_handle(slots, optype, rect, panel_idx)` both draws a handle and, if it's clicked this
+frame, starts a drag on it. Things about this that are easy to get wrong (several were bugs at some
+point during development, which is why they're called out here):
 
-- **`box_start` exists to prevent drift.** Each frame recomputes the *total* tile-space delta
-  since the drag started (`(mouse - mouse_start) / GRID_PX`, converted to a step) and applies it
-  against the window's position *when the drag began* (`box_start`), not against whatever
-  `tiles.windows[i]` currently holds. Since the window's live position is mutated in place every
-  frame, computing the delta against the *current* (already-moved) position instead of the
-  original would double-apply movement and make the window run away from the cursor.
-- **Raising to front happens after the per-window loop, not during it.** `tiles_raise_to_front`
-  removes an element and re-appends it, which shifts every later index down by one. Doing that
-  mid-iteration (inside `for w, i in tiles.windows`) would corrupt the rest of that frame's pass —
-  wrong window drawn at the wrong index for whatever's left of the loop. Instead, the loop just
-  records `raise_idx` when a handle is clicked, and the actual reorder happens once, after the
-  loop finishes.
-- `DragType.Resize` is defined but nothing sets or handles it yet — only `Move` is implemented.
+- **`tile_start` exists to prevent drift.** Each frame recomputes the *total* slot-space delta since
+  the drag started (`(mouse - mouse_start) / SLOT_PX`, truncated to whole slots) and computes each
+  edge's *target* from `tile_start`, not from the tile's current (already-moved) position. Each
+  edge then steps one slot per frame toward its target. Computing the delta against the current
+  position instead would double-apply movement and make the panel run away from the cursor.
+- **The frontmost handle wins a click.** Handles are drawn in iterator order (raised panel last),
+  and a click overwrites `drag_op` without checking whether it's already active — so when handles
+  overlap under the cursor, the last one drawn (the frontmost) is the one that ends up in
+  `drag_op`. This is safe because `drag_op` is zeroed every frame the mouse button is up, so it's
+  always inactive on the frame a press happens.
+- **Raising happens after the handle loop, not during it.** Setting `raised_panel` changes the
+  iterator's order; doing it mid-loop would skip or repeat a panel for that frame. The loop only
+  fills in `drag_op`; `raised_panel = drag_op.panel_idx` runs once, after the loop finishes.
+- **Drags are applied before drawing**, so each frame the panel and its handles are drawn at the
+  same, already-updated position.
 
 ## Render loop (`main`)
 
 Per-frame, in order:
-1. `Tab` toggles `edit_mode`; `drag_op` is reset to its zero value whenever the left mouse button
-   isn't held (`!rl.IsMouseButtonDown`), so a drag can't survive past its own mouse-up.
-2. Background clear, "SOLARIS" wordmark (bottom-right of the header strip) and, if `edit_mode`,
-   an "EDIT" label (bottom-left, same strip).
-3. **Grid pass**: every empty-cell candidate is drawn as a rounded square; a cell only highlights
-   and shows "add" if `tiles_can_place_new_window` says a new window would actually fit there
-   (occupied cells and cells too close to the grid edge just don't respond to hover/click at all).
-   A click on such a cell creates a `NEW_WINDOW_TILES_W × NEW_WINDOW_TILES_H` window there.
-4. **Window pass**: every placed window is drawn as a filled rounded panel, three widening/fading
-   outline rings behind it (a cheap outer-glow effect via repeated `box_inset` with a negative
-   amount), and one crisp bright border on top — all sharing one `roundness`/`PANEL_SEGMENTS` so
-   the glow rings trace the same corners as the fill instead of drifting into a different shape as
-   they expand outward.
-5. **Edit-mode pass** (only if `edit_mode`): the screen-shade overlay, then each window's drag
-   handle (hit-tested, colored differently while being dragged), with the move/raise-to-front
-   logic described above.
+1. Background clear. `Tab` toggles `edit_mode`; `drag_op` is reset to its zero value whenever the
+   left mouse button isn't held (`!rl.IsMouseButtonDown`), so a drag can't survive past its own
+   mouse-up.
+2. **Status bar** (`draw_status_bar`): "SOLARIS" wordmark at the bottom-right and, if
+   `edit_mode`, an "EDIT" label at the bottom-left.
+3. **Slot pass** (`draw_slots`): every slot is drawn as a rounded square; a slot only highlights
+   (and, in edit mode, shows "add") if `slots_can_place_panel` says a new panel would fit there
+   (occupied slots and slots too close to the grid edge don't respond to hover/click at all).
+   `draw_slots` returns the clicked slot, and `main` adds a `NEW_PANEL_SLOTS_W × NEW_PANEL_SLOTS_H`
+   panel there (size range: 2 slots up to the full grid).
+4. **Drag update** (only if `edit_mode` and a drag is active): moves or resizes the dragged
+   panel's tile as described above.
+5. **Panel pass**: every panel, in iterator order, is drawn by `draw_panel` as a filled rounded
+   shape with a crisp border, sharing one `roundness`/`PANEL_SEGMENTS`. A three-ring outer-glow
+   effect (repeated `rect_inset` with a negative amount) is present but commented out.
+6. **Edit-mode pass** (only if `edit_mode`): `draw_edit_shadow` over the slot area, then each
+   panel's move and resize handles, then the raise.
 
 `rl.SetConfigFlags({.MSAA_4X_HINT})` is set before `rl.InitWindow` — required for any of the
 rounded-rect/circle edges to look smooth rather than aliased; raylib's shape drawing has no
 anti-aliasing of its own, and segment count alone (`PANEL_SEGMENTS`) only affects how *circular*
 a curve is, not how smooth its rasterized edge is.
 
-### Constants (all in the `RENDER` section)
+### Constants (all in the `RENDER` section, except `MAX_PANELS`)
 
 | Constant | Meaning |
 |---|---|
-| `GRID_PX` | Pixel size of one grid cell |
-| `GRID_INIT_W`/`GRID_INIT_H` | Initial grid dimensions, in tiles |
-| `HEADER_H`, `PAD` | Header-strip height and outer margin, in pixels |
-| `CORNER_RADIUS` | The fixed pixel corner radius fed to `box_corner_roundness` everywhere |
-| `PANEL_SEGMENTS` | Arc segments per rounded corner for window panels (grid cells still use a literal `16`) |
-| `NEW_WINDOW_TILES_W`/`_H` | Size (in tiles) of a window created by clicking an empty cell |
-| `MAX_TILES` | Declared but currently unused |
-| `MAX_WINDOWS` | Capacity of `Tiles.windows` |
+| `SLOT_PX` | Pixel size of one slot |
+| `SLOTS_INIT_W`/`SLOTS_INIT_H` | Initial grid dimensions, in slots |
+| `STATUS_BAR_H`, `PAD` | Status-bar height and outer margin, in pixels |
+| `CORNER_RADIUS` | The fixed pixel corner radius fed to `rect_corner_roundness` everywhere |
+| `PANEL_SEGMENTS` | Arc segments per rounded corner for panels (slots still use a literal `16`) |
+| `NEW_PANEL_SLOTS_W`/`_H` | Size (in slots) of a panel created by clicking a free slot |
+| `MAX_PANELS` | Capacity of `Slots.panels` (in the `SLOTS` section) |
+
+`ui_font` is a global (not a constant): it can only be loaded after `rl.InitWindow`, so `main`
+assigns it at startup and every `draw_*` proc reads it directly.
 
 ## Known gaps
 
 - **Parser and UI are disconnected** (see "The two halves" above) — this is the big one.
-- `TiledWindow.range_nw`/`range_nh` are set (to `{n_w, n_w}`/`{n_h, n_h}`, i.e. no slack) when a
-  window is created, but nothing reads them — they're scaffolding for a future resize-range
-  constraint.
-- `DragType.Resize` is unimplemented.
-- `box_end` and `MAX_TILES` are unused.
-- **No test coverage.** `src/main_test.odin` only exercises the parser's token/keyword layers
-  (see `CLAUDE.md`'s "Known issues"); none of `Box`, `Tiles`, `TiledWindow`, or the drag logic has
-  any tests. That's a bigger gap here than it is for the parser, since this code has already had
-  several real bugs (index/position drift, mid-iteration array mutation, unsigned underflow from
-  an earlier `u32`-based version of `TiledBox`) caught only by manual play-testing.
+- **Panels have no theme or content yet** — `Panel` is just a tile plus a size range. The theme
+  and the telemetry it displays are meant to live on `Panel`, never on `Tile`.
+- `rect_end` is unused.
+- **Test coverage is thin on the UI side.** `src/main_test.odin` covers the parser layers and the
+  `slots_panel_expand_*` resize procs (grow/shrink per edge, grid bounds, size range); the rest of
+  `Slots` (iterator order, move, placement) and all drag/render logic in `main` are untested. That
+  matters here because this code has already had several real bugs (index/position drift,
+  mid-iteration array mutation, unsigned underflow from an earlier `u32`-based tile type) caught
+  only by manual play-testing.
 - **Debug output is `fmt.println`/`fmt.printfln` to stdout**, which only reaches anywhere useful
   in a normal console-attached run (`./dev.sh`). The packaged release build
   (see [`package.sh`](../package.sh), which passes `-subsystem:windows`) has no console at all, so

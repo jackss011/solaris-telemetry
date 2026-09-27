@@ -20,7 +20,7 @@ Declarations use `:=` (mutable, type inferred), `: T =` (mutable, explicit type)
 type declaration and a procedure declaration look identical:
 
 ```odin
-GRID_PX :: 64                          // untyped integer constant
+SLOT_PX :: 64                          // untyped integer constant
 TokenType :: enum { NONE, IDENT }      // constant binding to a type
 grab_token :: proc(text: string, idx: int) -> TokenRef { ... }  // constant binding to a procedure
 ```
@@ -31,13 +31,13 @@ languages. This is *why* `struct Foo { ... }` and `enum Bar { ... }` (C order) a
 the name always comes first, `::`, then the kind:
 
 ```odin
-Box :: struct { x, y, w, h: f32 }      // see src/main.odin's Box type
+Rect :: struct { x, y, w, h: f32 }     // see src/main.odin's Rect type
 TlmItemType :: enum { None, INT, UINT, FLOAT, STRING, BLOCK, DERIVED }
 TlmItemSuper :: union { TlmItemId, TlmItemArray }
 ```
 
-Untyped constants (like `GRID_PX` above) convert implicitly wherever they're used — `f32`,
-`i32`, `int`, whatever the context needs — which is why passing `GRID_PX*GRID_INIT_W` straight
+Untyped constants (like `SLOT_PX` above) convert implicitly wherever they're used — `f32`,
+`i32`, `int`, whatever the context needs — which is why passing `SLOT_PX*SLOTS_INIT_W` straight
 into `rl.InitWindow`'s `i32` parameters works without a cast, but a *typed* `:=` variable of
 the wrong width (e.g. an `int` where raylib wants `i32`) needs an explicit `i32(...)` cast.
 
@@ -54,8 +54,8 @@ for i := 0; i < n; i += 1 {}           // C-style three-part
 for x in slice {}                      // range-based (also works over: strings, maps, ints via 0..<n)
 ```
 
-The idiomatic Odin form for counting loops is range-based (see `src/main.odin`'s grid-drawing
-loop: `for iw in 0..<grid_w`), not the C-style three-part form — that's why the earlier
+The idiomatic Odin form for counting loops is range-based (see `src/main.odin`'s slot-drawing
+loop: `for iw in 0..<slots.w`), not the C-style three-part form — that's why the earlier
 C-style-with-`int`-prefix draft in this file (`for int iw := 0; ...; ih++`) was wrong twice
 over: Odin's for-init doesn't take a type before the variable, and there's no `++`/`--`
 operator at all, only `+= 1`.
@@ -67,7 +67,7 @@ without it, switching on an enum requires exhaustive cases or a compile error.
 
 `defer` runs its statement when the enclosing scope exits, LIFO — used throughout this file for
 paired setup/teardown (`rl.InitWindow` / `defer rl.CloseWindow()`, `rl.LoadFontEx` /
-`defer rl.UnloadFont(font)`).
+`defer rl.UnloadFont(ui_font)`).
 
 ## Procedures
 
@@ -75,12 +75,12 @@ Procedures can return multiple values, which is Odin's primary substitute for bo
 exceptions:
 
 ```odin
-box_end :: proc(b: Box) -> (f32, f32) {
-    return b.x + b.w, b.y + b.h
+rect_end :: proc(r: Rect) -> (f32, f32) {
+    return r.x + r.w, r.y + r.h
 }
-window_w, window_h := box_end(grid)    // must destructure into separate variables —
-                                        // Odin does not splat a multi-return call into
-                                        // a composite literal like Box{0, 0, box_end(grid)}
+window_w, window_h := rect_end(slots_rect)  // must destructure into separate variables —
+                                            // Odin does not splat a multi-return call into
+                                            // a composite literal like Rect{0, 0, rect_end(slots_rect)}
 ```
 
 Named return values (`-> (keyword: Keyword, next_idx: int)`, as in `grab_keyword`) let you
@@ -167,7 +167,7 @@ hidden control flow.
 ## `using`
 
 `using` on a struct field or import brings its fields/exports into the current scope directly —
-e.g. `using b: Box` inside a procedure would let you write `x` instead of `b.x`. It's convenient
+e.g. `using r: Rect` inside a procedure would let you write `x` instead of `r.x`. It's convenient
 but can obscure where a name comes from; this codebase doesn't currently use it, and per
 `odin-best-practices` it's worth being sparing with for that reason.
 

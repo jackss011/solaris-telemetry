@@ -367,59 +367,60 @@ TlmItemDef :: struct {
 
 
 
-/* ::::::::::::::::::::::::::: BOX ::::::::::::::::::::::::::: */
+/* ::::::::::::::::::::::::::: RECT ::::::::::::::::::::::::::: */
 
-Box :: struct {
+// A rectangle in (float) screen pixels.
+Rect :: struct {
     x : f32,
     y : f32,
     w : f32,
     h : f32,
 }
 
-box_inset :: proc(b : Box, inset: f32) -> Box {
+rect_inset :: proc(r : Rect, inset: f32) -> Rect {
     half := inset / 2
-    return Box{b.x + half, b.y + half, b.w - inset, b.h - inset}
+    return Rect{r.x + half, r.y + half, r.w - inset, r.h - inset}
 }
 
-box_to_rl :: proc(b: Box) -> rl.Rectangle {
-    return rl.Rectangle{b.x, b.y, b.w, b.h}
+rect_to_rl :: proc(r: Rect) -> rl.Rectangle {
+    return rl.Rectangle{r.x, r.y, r.w, r.h}
 }
 
-box_end :: proc(b: Box) -> (f32, f32) {
-    return b.x + b.w, b.y + b.h
+rect_end :: proc(r: Rect) -> (f32, f32) {
+    return r.x + r.w, r.y + r.h
 }
 
-box_contains :: proc(b: Box, point: [2]f32) -> bool {
-    return point.x >= b.x && point.x < b.x + b.w && point.y >= b.y && point.y < b.y + b.h
+rect_contains :: proc(r: Rect, point: [2]f32) -> bool {
+    return point.x >= r.x && point.x < r.x + r.w && point.y >= r.y && point.y < r.y + r.h
 }
 
-box_centered :: proc(b: Box, size: [2]f32) -> Box {
-    return Box{b.x + b.w/2 - size.x/2, b.y + b.h/2 - size.y/2, size.x, size.y}
+rect_centered :: proc(r: Rect, size: [2]f32) -> Rect {
+    return Rect{r.x + r.w/2 - size.x/2, r.y + r.h/2 - size.y/2, size.x, size.y}
 }
 
-// Boxes of the given size tucked into each corner of b (inside it).
-box_uplx :: proc(b: Box, size: [2]f32) -> Box {
-    return Box{b.x, b.y, size.x, size.y}
+// Rects of the given size tucked into each corner of r (inside it).
+rect_uplx :: proc(r: Rect, size: [2]f32) -> Rect {
+    return Rect{r.x, r.y, size.x, size.y}
 }
 
-box_uprx :: proc(b: Box, size: [2]f32) -> Box {
-    return Box{b.x + b.w - size.x, b.y, size.x, size.y}
+rect_uprx :: proc(r: Rect, size: [2]f32) -> Rect {
+    return Rect{r.x + r.w - size.x, r.y, size.x, size.y}
 }
 
-box_dwlx :: proc(b: Box, size: [2]f32) -> Box {
-    return Box{b.x, b.y + b.h - size.y, size.x, size.y}
+rect_dwlx :: proc(r: Rect, size: [2]f32) -> Rect {
+    return Rect{r.x, r.y + r.h - size.y, size.x, size.y}
 }
 
-box_dwrx :: proc(b: Box, size: [2]f32) -> Box {
-    return Box{b.x + b.w - size.x, b.y + b.h - size.y, size.x, size.y}
+rect_dwrx :: proc(r: Rect, size: [2]f32) -> Rect {
+    return Rect{r.x + r.w - size.x, r.y + r.h - size.y, size.x, size.y}
 }
 
-// rl.DrawRectangleRounded's `roundness` is relative to the box's shorter side, so the same
-// value produces a different-looking corner radius on differently-sized/shaped boxes. This
-// converts a fixed pixel radius into the roundness fraction that reproduces it on box `b`,
-// so the corner radius stays constant (equal on every side) regardless of the box's length.
-box_corner_roundness :: proc(b: Box, radius: f32) -> f32 {
-    shorter := min(b.w, b.h)
+// rl.DrawRectangleRounded's `roundness` is relative to the rect's shorter side, so the same
+// value produces a different-looking corner radius on differently-sized/shaped rects. This
+// converts a fixed pixel radius into the roundness fraction that reproduces it on rect `r`,
+// so the corner radius stays constant (equal on every side) regardless of the rect's length.
+rect_corner_roundness :: proc(r: Rect, radius: f32) -> f32 {
+    shorter := min(r.w, r.h)
     if shorter <= 0 {
         return 0
     }
@@ -438,55 +439,62 @@ DragType :: enum {
 
 DragOperation :: struct {
     active: bool,
-    win_idx: int,
+    panel_idx: int,
     mouse_start: [2]f32,
-    box_start: TiledBox,
+    tile_start: Tile,
     optype: DragType,
 }
 
-/* ::::::::::::::::::::::::::: TILING ::::::::::::::::::::::::::: */
+/* ::::::::::::::::::::::::::: SLOTS ::::::::::::::::::::::::::: */
 
-MAX_TILES :: 128
-MAX_WINDOWS :: 128
+// Layout vocabulary:
+// - slot:   one cell of the layout grid (int coordinates)
+// - tile:   a rectangle of whole slots (ints) - pure geometry, no theme
+// - panel:  what's attached to a tile and drawn on screen - its Rect (float pixels) is derived
+//           from its tile every frame; it's what will carry a UI theme and telemetry content
+// - window: only ever the OS window
 
-TiledBox :: struct {
-    n_x: int,
-    n_y: int,
-    n_w: int,
-    n_h: int,
+MAX_PANELS :: 128
+
+// A rectangle of slots: top-left slot (x, y), size (w, h) in slots.
+Tile :: struct {
+    x: int,
+    y: int,
+    w: int,
+    h: int,
 }
 
-TiledWindow :: struct {
-    box : TiledBox,
-    range_nw: [2]int,
-    range_nh: [2]int,
+Panel :: struct {
+    tile: Tile,
+    min_size: [2]int, // in slots
+    max_size: [2]int, // in slots
 }
 
-Tiles :: struct {
-    n_w: int,
-    n_h: int,
-    windows: [dynamic; MAX_WINDOWS]TiledWindow,
+Slots :: struct {
+    w: int,
+    h: int,
+    panels: [dynamic; MAX_PANELS]Panel,
     drag_op: DragOperation,
-    raised_idx: int, // window drawn on top of every other one, -1 if none
+    raised_panel: int, // panel drawn on top of every other one, -1 if none
 }
 
-TilesIter :: struct {
-    tiles: ^Tiles,
+PanelIter :: struct {
+    slots: ^Slots,
     pos: int,
 }
 
-tiles_iter :: proc(tiles: ^Tiles) -> TilesIter {
-    return TilesIter{tiles = tiles}
+slots_panels :: proc(slots: ^Slots) -> PanelIter {
+    return PanelIter{slots = slots}
 }
 
-// Yields windows in draw order: every non-raised window in array order, then the raised one
-// last so it ends up on top. Windows never move in the array, so the yielded index stays valid
-// to hold elsewhere (e.g. drag_op.win_idx). Usage:
-//     it := tiles_iter(&tiles)
-//     for w, i in tiles_iter_next(&it) { ... }
-tiles_iter_next :: proc(it: ^TilesIter) -> (win: TiledWindow, idx: int, ok: bool) {
-    n := len(it.tiles.windows)
-    raised := it.tiles.raised_idx
+// Yields panels in draw order: every non-raised panel in array order, then the raised one
+// last so it ends up on top. Panels never move in the array, so the yielded index stays valid
+// to hold elsewhere (e.g. drag_op.panel_idx). Usage:
+//     it := slots_panels(&slots)
+//     for p, i in slots_panels_next(&it) { ... }
+slots_panels_next :: proc(it: ^PanelIter) -> (panel: Panel, idx: int, ok: bool) {
+    n := len(it.slots.panels)
+    raised := it.slots.raised_panel
     has_raised := raised >= 0 && raised < n
 
     for it.pos < n {
@@ -495,140 +503,137 @@ tiles_iter_next :: proc(it: ^TilesIter) -> (win: TiledWindow, idx: int, ok: bool
         if has_raised && idx == raised {
             continue
         }
-        return it.tiles.windows[idx], idx, true
+        return it.slots.panels[idx], idx, true
     }
 
     if has_raised && it.pos == n {
         it.pos += 1
-        return it.tiles.windows[raised], raised, true
+        return it.slots.panels[raised], raised, true
     }
     return {}, -1, false
 }
 
-// Places a window of size (w, h) at (x, y) in the tile grid, if that spot is within grid
-// bounds, and raises it. Windows are allowed to overlap. Returns -1 if out of bounds or the
-// window store is full.
-tiles_new_window :: proc(tiles: ^Tiles, candidate: TiledWindow) -> int {
-    if !tiles_is_in_bounds(tiles^, candidate) {
+// Adds a panel, if its tile is within the slot grid, and raises it. Panels are allowed to
+// overlap. Returns -1 if out of bounds or the panel store is full.
+slots_add_panel :: proc(slots: ^Slots, candidate: Panel) -> int {
+    if !slots_contains_tile(slots^, candidate.tile) {
         return -1
     }
-    if append(&tiles.windows, candidate) == 0 {
+    if append(&slots.panels, candidate) == 0 {
         return -1
     }
-    tiles.raised_idx = len(tiles.windows) - 1
-    return tiles.raised_idx
+    slots.raised_panel = len(slots.panels) - 1
+    return slots.raised_panel
 }
 
-tiles_is_in_bounds :: proc(tiles: Tiles, window: TiledWindow) -> bool {
-    b := window.box
-    return b.n_x >= 0 && b.n_y >= 0 && b.n_x + b.n_w <= tiles.n_w && b.n_y + b.n_h <= tiles.n_h
+slots_contains_tile :: proc(slots: Slots, t: Tile) -> bool {
+    return t.x >= 0 && t.y >= 0 && t.x + t.w <= slots.w && t.y + t.h <= slots.h
 }
 
-// Whether grid cell (x, y) falls inside any existing window's footprint.
-tiles_cell_is_free :: proc(tiles: Tiles, x: int, y: int) -> bool {
-    for w in tiles.windows {
-        b := w.box
-        if x >= b.n_x && x < b.n_x + b.n_w && y >= b.n_y && y < b.n_y + b.n_h {
+// Whether slot (x, y) is outside every panel's tile.
+slots_is_free :: proc(slots: Slots, x: int, y: int) -> bool {
+    for p in slots.panels {
+        t := p.tile
+        if x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h {
             return false
         }
     }
     return true
 }
 
-// Whether a new window of size (w, h) could be placed with its top-left at grid cell (x, y):
-// that cell must be unoccupied, and the whole footprint must stay within the grid.
-tiles_can_place_new_window :: proc(tiles: Tiles, x: int, y: int, w: int, h: int) -> bool {
-    if !tiles_cell_is_free(tiles, x, y) {
+// Whether a new panel of size (w, h) slots could be placed with its top-left at slot (x, y):
+// that slot must be free, and the whole tile must stay within the slot grid.
+slots_can_place_panel :: proc(slots: Slots, x: int, y: int, w: int, h: int) -> bool {
+    if !slots_is_free(slots, x, y) {
         return false
     }
-    return tiles_is_in_bounds(tiles, TiledWindow{box = TiledBox{x, y, w, h}})
+    return slots_contains_tile(slots, Tile{x, y, w, h})
 }
 
-tiles_window_to_box :: proc(window: TiledWindow, tile_px: f32, origin: [2]f32) -> Box {
-    b := window.box
-    return Box{
-        origin.x + f32(b.n_x) * tile_px,
-        origin.y + f32(b.n_y) * tile_px,
-        f32(b.n_w) * tile_px,
-        f32(b.n_h) * tile_px,
+tile_to_rect :: proc(t: Tile, slot_px: f32, origin: [2]f32) -> Rect {
+    return Rect{
+        origin.x + f32(t.x) * slot_px,
+        origin.y + f32(t.y) * slot_px,
+        f32(t.w) * slot_px,
+        f32(t.h) * slot_px,
     }
 }
 
-// Nudges the window at win_idx one tile up (dir < 0) or down (dir > 0), leaving its column and
-// size unchanged. Refuses (leaving tiles.windows untouched) if that would push it out of grid
-// bounds; overlapping other windows is allowed. Returns whether the move happened.
-tiles_window_move_v :: proc(tiles: ^Tiles, win_idx: int, dir: int) -> bool {
-    candidate := tiles.windows[win_idx]
-    candidate.box.n_y += math.sign(dir)
+// Nudges the panel at panel_idx one slot up (dir < 0) or down (dir > 0), leaving its column and
+// size unchanged. Refuses (leaving slots.panels untouched) if that would push it out of the slot
+// grid; overlapping other panels is allowed. Returns whether the move happened.
+slots_panel_move_v :: proc(slots: ^Slots, panel_idx: int, dir: int) -> bool {
+    candidate := slots.panels[panel_idx]
+    candidate.tile.y += math.sign(dir)
 
-    if !tiles_is_in_bounds(tiles^, candidate) {
+    if !slots_contains_tile(slots^, candidate.tile) {
         return false
     }
 
-    tiles.windows[win_idx] = candidate
+    slots.panels[panel_idx] = candidate
     return true
 }
 
-// Nudges the window at win_idx one tile left (dir < 0) or right (dir > 0), leaving its row and
-// size unchanged. Refuses (leaving tiles.windows untouched) if that would push it out of grid
-// bounds; overlapping other windows is allowed. Returns whether the move happened.
-tiles_window_move_h :: proc(tiles: ^Tiles, win_idx: int, dir: int) -> bool {
-    candidate := tiles.windows[win_idx]
-    candidate.box.n_x += math.sign(dir)
+// Nudges the panel at panel_idx one slot left (dir < 0) or right (dir > 0), leaving its row and
+// size unchanged. Refuses (leaving slots.panels untouched) if that would push it out of the slot
+// grid; overlapping other panels is allowed. Returns whether the move happened.
+slots_panel_move_h :: proc(slots: ^Slots, panel_idx: int, dir: int) -> bool {
+    candidate := slots.panels[panel_idx]
+    candidate.tile.x += math.sign(dir)
 
-    if !tiles_is_in_bounds(tiles^, candidate) {
+    if !slots_contains_tile(slots^, candidate.tile) {
         return false
     }
 
-    tiles.windows[win_idx] = candidate
+    slots.panels[panel_idx] = candidate
     return true
 }
 
-// Commits candidate to win_idx if it stays within grid bounds and its size stays within the
-// window's own range_nw/range_nh ([min, max] tiles). Returns whether it was committed.
-tiles_window_try_resize :: proc(tiles: ^Tiles, win_idx: int, candidate: TiledWindow) -> bool {
-    b := candidate.box
-    if b.n_w < candidate.range_nw[0] || b.n_w > candidate.range_nw[1] ||
-       b.n_h < candidate.range_nh[0] || b.n_h > candidate.range_nh[1] {
+// Commits candidate to panel_idx if its tile stays within the slot grid and its size stays
+// within the panel's own min_size/max_size. Returns whether it was committed.
+slots_panel_try_resize :: proc(slots: ^Slots, panel_idx: int, candidate: Panel) -> bool {
+    t := candidate.tile
+    if t.w < candidate.min_size.x || t.w > candidate.max_size.x ||
+       t.h < candidate.min_size.y || t.h > candidate.max_size.y {
         return false
     }
-    if !tiles_is_in_bounds(tiles^, candidate) {
+    if !slots_contains_tile(slots^, t) {
         return false
     }
 
-    tiles.windows[win_idx] = candidate
+    slots.panels[panel_idx] = candidate
     return true
 }
 
-// The expand procs move one edge of the window at win_idx by one tile: outward (grow) for
+// The expand procs move one edge of the panel at panel_idx by one slot: outward (grow) for
 // dir > 0, inward (shrink) for dir < 0, keeping the opposite edge fixed. Refuses (leaving
-// tiles.windows untouched) if that would leave the grid or break the window's size range;
-// overlapping other windows is allowed. Returns whether the resize happened.
+// slots.panels untouched) if that would leave the slot grid or break the panel's size range;
+// overlapping other panels is allowed. Returns whether the resize happened.
 
-tiles_window_expand_up :: proc(tiles: ^Tiles, win_idx: int, dir: int) -> bool {
-    candidate := tiles.windows[win_idx]
-    candidate.box.n_y -= math.sign(dir)
-    candidate.box.n_h += math.sign(dir)
-    return tiles_window_try_resize(tiles, win_idx, candidate)
+slots_panel_expand_up :: proc(slots: ^Slots, panel_idx: int, dir: int) -> bool {
+    candidate := slots.panels[panel_idx]
+    candidate.tile.y -= math.sign(dir)
+    candidate.tile.h += math.sign(dir)
+    return slots_panel_try_resize(slots, panel_idx, candidate)
 }
 
-tiles_window_expand_dw :: proc(tiles: ^Tiles, win_idx: int, dir: int) -> bool {
-    candidate := tiles.windows[win_idx]
-    candidate.box.n_h += math.sign(dir)
-    return tiles_window_try_resize(tiles, win_idx, candidate)
+slots_panel_expand_dw :: proc(slots: ^Slots, panel_idx: int, dir: int) -> bool {
+    candidate := slots.panels[panel_idx]
+    candidate.tile.h += math.sign(dir)
+    return slots_panel_try_resize(slots, panel_idx, candidate)
 }
 
-tiles_window_expand_lx :: proc(tiles: ^Tiles, win_idx: int, dir: int) -> bool {
-    candidate := tiles.windows[win_idx]
-    candidate.box.n_x -= math.sign(dir)
-    candidate.box.n_w += math.sign(dir)
-    return tiles_window_try_resize(tiles, win_idx, candidate)
+slots_panel_expand_lx :: proc(slots: ^Slots, panel_idx: int, dir: int) -> bool {
+    candidate := slots.panels[panel_idx]
+    candidate.tile.x -= math.sign(dir)
+    candidate.tile.w += math.sign(dir)
+    return slots_panel_try_resize(slots, panel_idx, candidate)
 }
 
-tiles_window_expand_rx :: proc(tiles: ^Tiles, win_idx: int, dir: int) -> bool {
-    candidate := tiles.windows[win_idx]
-    candidate.box.n_w += math.sign(dir)
-    return tiles_window_try_resize(tiles, win_idx, candidate)
+slots_panel_expand_rx :: proc(slots: ^Slots, panel_idx: int, dir: int) -> bool {
+    candidate := slots.panels[panel_idx]
+    candidate.tile.w += math.sign(dir)
+    return slots_panel_try_resize(slots, panel_idx, candidate)
 }
 
 
@@ -637,63 +642,63 @@ tiles_window_expand_rx :: proc(tiles: ^Tiles, win_idx: int, dir: int) -> bool {
 
 BACKGROUND_COLOR := rl.Color{15, 15, 20, 255}
 ui_font: rl.Font // loaded in main after InitWindow - raylib can't load fonts before a window exists
-GRID_PX :: 100
-GRID_INIT_W :: 8
-GRID_INIT_H :: 6
-HEADER_H :: 32
+SLOT_PX :: 100
+SLOTS_INIT_W :: 8
+SLOTS_INIT_H :: 6
+STATUS_BAR_H :: 32
 PAD :: 8
 CORNER_RADIUS :: 8
 PANEL_SEGMENTS :: 36 // corner smoothness for rounded panels - higher = less jagged
-NEW_WINDOW_TILES_W :: 3
-NEW_WINDOW_TILES_H :: 4
+NEW_PANEL_SLOTS_W :: 3
+NEW_PANEL_SLOTS_H :: 4
 
-// Draws a drag handle and starts a drag on it when clicked. Handles are drawn in tiles_iter
+// Draws a drag handle and starts a drag on it when clicked. Handles are drawn in slots_panels
 // order (raised last), so if several overlap under the click the last one drawn (the frontmost)
-// overwrites drag_op and wins. The caller raises drag_op.win_idx after the loop, so the
+// overwrites drag_op and wins. The caller raises drag_op.panel_idx after the loop, so the
 // iteration order stays stable while it's running.
-draw_drag_handle :: proc(tiles: ^Tiles, optype: DragType, b: Box, win_idx: int) {
+draw_drag_handle :: proc(slots: ^Slots, optype: DragType, r: Rect, panel_idx: int) {
     mouse := rl.GetMousePosition()
 
     // should we enter moving?
-    if box_contains(b, mouse) && rl.IsMouseButtonPressed(rl.MouseButton.LEFT) {
-        tiles.drag_op.active = true
-        tiles.drag_op.optype = optype
-        tiles.drag_op.win_idx = win_idx
-        tiles.drag_op.mouse_start = mouse
-        tiles.drag_op.box_start = tiles.windows[win_idx].box
+    if rect_contains(r, mouse) && rl.IsMouseButtonPressed(rl.MouseButton.LEFT) {
+        slots.drag_op.active = true
+        slots.drag_op.optype = optype
+        slots.drag_op.panel_idx = panel_idx
+        slots.drag_op.mouse_start = mouse
+        slots.drag_op.tile_start = slots.panels[panel_idx].tile
     }
 
-    is_me_active := tiles.drag_op.active && tiles.drag_op.optype == optype && tiles.drag_op.win_idx == win_idx
+    is_me_active := slots.drag_op.active && slots.drag_op.optype == optype && slots.drag_op.panel_idx == panel_idx
 
     rl.DrawRectangleRounded(
-        box_to_rl(b),
-        box_corner_roundness(b, CORNER_RADIUS),
+        rect_to_rl(r),
+        rect_corner_roundness(r, CORNER_RADIUS),
         32,
         is_me_active ? rl.Color{140, 90, 80, 255} : rl.Color{100, 70, 70, 255},
     )
 }
 
-// Draws the tile grid with its top-left at origin, highlighting the hovered cell if a new window
-// could be placed there. Returns whether such a cell was clicked this frame, and which one.
-draw_grid :: proc(tiles: Tiles, origin: Box, edit_mode: bool) -> (clicked: bool, clicked_cell: [2]int) {
+// Draws the slot grid with its top-left at origin, highlighting the hovered slot if a new panel
+// could be placed there. Returns whether such a slot was clicked this frame, and which one.
+draw_slots :: proc(slots: Slots, origin: Rect, edit_mode: bool) -> (clicked: bool, clicked_slot: [2]int) {
     mouse := rl.GetMousePosition()
 
-    for iw in 0..<tiles.n_w {
-        for ih in 0..<tiles.n_h {
-            x, y := f32(iw*GRID_PX)+origin.x, f32(ih*GRID_PX)+origin.y
-            b := Box{x, y, f32(GRID_PX), f32(GRID_PX)}
-            b1 := box_inset(b, 8.0)
-            hovered := box_contains(b, mouse) &&
-                tiles_can_place_new_window(tiles, iw, ih, NEW_WINDOW_TILES_W, NEW_WINDOW_TILES_H)
+    for iw in 0..<slots.w {
+        for ih in 0..<slots.h {
+            x, y := f32(iw*SLOT_PX)+origin.x, f32(ih*SLOT_PX)+origin.y
+            r := Rect{x, y, f32(SLOT_PX), f32(SLOT_PX)}
+            r1 := rect_inset(r, 8.0)
+            hovered := rect_contains(r, mouse) &&
+                slots_can_place_panel(slots, iw, ih, NEW_PANEL_SLOTS_W, NEW_PANEL_SLOTS_H)
 
             if hovered && rl.IsMouseButtonPressed(rl.MouseButton.LEFT) {
                 clicked = true
-                clicked_cell = {iw, ih}
+                clicked_slot = {iw, ih}
             }
 
             rl.DrawRectangleRounded(
-                box_to_rl(b1),
-                box_corner_roundness(b1, CORNER_RADIUS),
+                rect_to_rl(r1),
+                rect_corner_roundness(r1, CORNER_RADIUS),
                 16,   // segments
                 hovered ? rl.Color{45, 40, 40, 255} : rl.Color{30, 26, 26, 255}, // fill, translucent
             )
@@ -701,8 +706,8 @@ draw_grid :: proc(tiles: Tiles, origin: Box, edit_mode: bool) -> (clicked: bool,
             if hovered && edit_mode {
                 text_size := rl.MeasureTextEx(ui_font, "add", 20, 1)
                 text_pos := rl.Vector2{
-                    b.x + b.w/2 - text_size.x/2,
-                    b.y + b.h/2 - text_size.y/2,
+                    r.x + r.w/2 - text_size.x/2,
+                    r.y + r.h/2 - text_size.y/2,
                 }
                 rl.DrawTextEx(ui_font, "add", text_pos, 20, 1, rl.Color{200, 210, 220, 255})
             }
@@ -711,30 +716,30 @@ draw_grid :: proc(tiles: Tiles, origin: Box, edit_mode: bool) -> (clicked: bool,
     return
 }
 
-// Draws the header strip along the bottom of window: the "EDIT" badge on the left while in edit
+// Draws the status bar along the bottom of window: the "EDIT" badge on the left while in edit
 // mode, and the "SOLARIS" logo on the right.
-draw_header :: proc(window: Box, edit_mode: bool) {
-    label_size := rl.MeasureTextEx(ui_font, "SOLARIS", HEADER_H, 2)
+draw_status_bar :: proc(window: Rect, edit_mode: bool) {
+    label_size := rl.MeasureTextEx(ui_font, "SOLARIS", STATUS_BAR_H, 2)
     label_color := rl.Color{207/3, 210/4, 220/4, 255}
 
     if edit_mode {
-        rl.DrawTextEx(ui_font, "EDIT", rl.Vector2{PAD, window.h - PAD - HEADER_H + 3}, HEADER_H, 2, rl.Color{230, 180, 60, 255})
+        rl.DrawTextEx(ui_font, "EDIT", rl.Vector2{PAD, window.h - PAD - STATUS_BAR_H + 3}, STATUS_BAR_H, 2, rl.Color{230, 180, 60, 255})
     }
 
     rl.DrawTextEx(ui_font, "SOLARIS",
-        rl.Vector2{window.w - label_size.x - PAD*2, window.h - PAD - HEADER_H + 3},
-        HEADER_H,
+        rl.Vector2{window.w - label_size.x - PAD*2, window.h - PAD - STATUS_BAR_H + 3},
+        STATUS_BAR_H,
         2, label_color)
 }
 
-// Draws a window as a rounded panel filling its tiles' screen box wb, inset so neighbouring
+// Draws a panel as a rounded shape filling its tile's screen rect r, inset so neighbouring
 // panels don't touch.
-draw_panel :: proc(wb: Box) {
-    wb1 := box_inset(wb, 8.0)
-    roundness := box_corner_roundness(wb1, CORNER_RADIUS)
+draw_panel :: proc(r: Rect) {
+    r1 := rect_inset(r, 8.0)
+    roundness := rect_corner_roundness(r1, CORNER_RADIUS)
 
     rl.DrawRectangleRounded(
-        box_to_rl(wb1),
+        rect_to_rl(r1),
         roundness,
         PANEL_SEGMENTS,
         rl.Color{40, 30, 30, 255},
@@ -742,39 +747,39 @@ draw_panel :: proc(wb: Box) {
 
     // // soft outer glow: a couple of widening, fading outlines behind the crisp border
     // for glow_i in 1..=3 {
-    //     glow_b := box_inset(wb1, -f32(glow_i) * 3)
+    //     glow_r := rect_inset(r1, -f32(glow_i) * 3)
     //     alpha := u8(70 - glow_i * 20)
     //     rl.DrawRectangleRoundedLinesEx(
-    //         box_to_rl(glow_b),
-    //         box_corner_roundness(glow_b, CORNER_RADIUS),
+    //         rect_to_rl(glow_r),
+    //         rect_corner_roundness(glow_r, CORNER_RADIUS),
     //         PANEL_SEGMENTS, 2,
     //         rl.Color{110, 190, 255, alpha},
     //     )
     // }
 
     rl.DrawRectangleRoundedLinesEx(
-        box_to_rl(wb1),
+        rect_to_rl(r1),
         roundness,
         PANEL_SEGMENTS, 1.5,
         rl.Color{140, 80, 80, 255},
     )
 }
 
-// Dims the grid area b with a translucent overlay while in edit mode, so the edit handles drawn
+// Dims the slot area r with a translucent overlay while in edit mode, so the edit handles drawn
 // after it stand out.
-draw_edit_shadow :: proc(b: Box) {
+draw_edit_shadow :: proc(r: Rect) {
     rl.DrawRectangleRounded( // TODO: normal rectangle
-        box_to_rl(b),
-        box_corner_roundness(b, CORNER_RADIUS),
+        rect_to_rl(r),
+        rect_corner_roundness(r, CORNER_RADIUS),
         16,
         rl.Color{0, 0, 0, 66},
     )
 }
 
 main :: proc() {
-    tile := Box{PAD, PAD, GRID_PX*GRID_INIT_W, GRID_PX*GRID_INIT_H}
-    window_w, window_h := tile.w + PAD*2, tile.h + HEADER_H + PAD*2
-    window := Box{0, 0, window_w, window_h}
+    slots_rect := Rect{PAD, PAD, SLOT_PX*SLOTS_INIT_W, SLOT_PX*SLOTS_INIT_H}
+    window_w, window_h := slots_rect.w + PAD*2, slots_rect.h + STATUS_BAR_H + PAD*2
+    window := Rect{0, 0, window_w, window_h}
 
     rl.SetConfigFlags({.MSAA_4X_HINT}) // smooths rounded-rect/circle edges - must be set before InitWindow
     rl.InitWindow(i32(window.w), i32(window.h), "Solaris")
@@ -790,7 +795,7 @@ main :: proc() {
     defer rl.UnloadFont(ui_font)
     rl.SetTextureFilter(ui_font.texture, rl.TextureFilter.BILINEAR);
 
-    tiles := Tiles{n_w = GRID_INIT_W, n_h = GRID_INIT_H, raised_idx = -1}
+    slots := Slots{w = SLOTS_INIT_W, h = SLOTS_INIT_H, raised_panel = -1}
     edit_mode := false
 
     for !rl.WindowShouldClose() {
@@ -806,95 +811,94 @@ main :: proc() {
         mouse := rl.GetMousePosition()
 
         if !rl.IsMouseButtonDown(rl.MouseButton.LEFT) {
-            tiles.drag_op = DragOperation{}
+            slots.drag_op = DragOperation{}
         }
 
-        // RENDER: header
-        draw_header(window, edit_mode)
-  
-        // RENDER: bg grid
-        clicked, clicked_cell := draw_grid(tiles, tile, edit_mode)
+        // RENDER: status bar
+        draw_status_bar(window, edit_mode)
 
-        // UPDATE: new window
+        // RENDER: bg slots
+        clicked, clicked_slot := draw_slots(slots, slots_rect, edit_mode)
+
+        // UPDATE: new panel
         if clicked {
-            new_box := TiledBox{clicked_cell.x, clicked_cell.y, NEW_WINDOW_TILES_W, NEW_WINDOW_TILES_H}
-            new_win := TiledWindow{
-                box      = new_box,
-                range_nw = {2, tiles.n_w},
-                range_nh = {2, tiles.n_h},
+            new_panel := Panel{
+                tile     = Tile{clicked_slot.x, clicked_slot.y, NEW_PANEL_SLOTS_W, NEW_PANEL_SLOTS_H},
+                min_size = {2, 2},
+                max_size = {slots.w, slots.h},
             }
-            if tiles_new_window(&tiles, new_win) != -1 {
-                fmt.printfln("Adding Packet Viewer at (%d, %d)", clicked_cell.x, clicked_cell.y)
+            if slots_add_panel(&slots, new_panel) != -1 {
+                fmt.printfln("Adding Packet Viewer at (%d, %d)", clicked_slot.x, clicked_slot.y)
             }
         }
 
         // UPDATE: panels position if dragging
-        if edit_mode && tiles.drag_op.active {
-            i := tiles.drag_op.win_idx
-            cur := tiles.windows[i].box
-            start := tiles.drag_op.box_start
-            delta_drag := (mouse - tiles.drag_op.mouse_start) / [2]f32{GRID_PX, GRID_PX}
-            delta_tiles := [2]int{int(delta_drag.x), int(delta_drag.y)}
+        if edit_mode && slots.drag_op.active {
+            i := slots.drag_op.panel_idx
+            cur := slots.panels[i].tile
+            start := slots.drag_op.tile_start
+            delta_drag := (mouse - slots.drag_op.mouse_start) / [2]f32{SLOT_PX, SLOT_PX}
+            delta_slots := [2]int{int(delta_drag.x), int(delta_drag.y)}
 
-            // signed distance (in tiles) each edge still has to travel to reach its target -
+            // signed distance (in slots) each edge still has to travel to reach its target -
             // for expand_up/_lx positive means outward, i.e. up/left on screen
-            to_up := cur.n_y - (start.n_y + delta_tiles.y)
-            to_dw := (start.n_y + start.n_h + delta_tiles.y) - (cur.n_y + cur.n_h)
-            to_lx := cur.n_x - (start.n_x + delta_tiles.x)
-            to_rx := (start.n_x + start.n_w + delta_tiles.x) - (cur.n_x + cur.n_w)
+            to_up := cur.y - (start.y + delta_slots.y)
+            to_dw := (start.y + start.h + delta_slots.y) - (cur.y + cur.h)
+            to_lx := cur.x - (start.x + delta_slots.x)
+            to_rx := (start.x + start.w + delta_slots.x) - (cur.x + cur.w)
 
-            switch tiles.drag_op.optype {
+            switch slots.drag_op.optype {
             case .Move:
-                tiles_window_move_h(&tiles, i, start.n_x + delta_tiles.x - cur.n_x)
-                tiles_window_move_v(&tiles, i, start.n_y + delta_tiles.y - cur.n_y)
+                slots_panel_move_h(&slots, i, start.x + delta_slots.x - cur.x)
+                slots_panel_move_v(&slots, i, start.y + delta_slots.y - cur.y)
             case .ResizeUpLeft:
-                tiles_window_expand_up(&tiles, i, to_up)
-                tiles_window_expand_lx(&tiles, i, to_lx)
+                slots_panel_expand_up(&slots, i, to_up)
+                slots_panel_expand_lx(&slots, i, to_lx)
             case .ResizeUpRight:
-                tiles_window_expand_up(&tiles, i, to_up)
-                tiles_window_expand_rx(&tiles, i, to_rx)
+                slots_panel_expand_up(&slots, i, to_up)
+                slots_panel_expand_rx(&slots, i, to_rx)
             case .ResizeDownLeft:
-                tiles_window_expand_dw(&tiles, i, to_dw)
-                tiles_window_expand_lx(&tiles, i, to_lx)
+                slots_panel_expand_dw(&slots, i, to_dw)
+                slots_panel_expand_lx(&slots, i, to_lx)
             case .ResizeDownRight:
-                tiles_window_expand_dw(&tiles, i, to_dw)
-                tiles_window_expand_rx(&tiles, i, to_rx)
+                slots_panel_expand_dw(&slots, i, to_dw)
+                slots_panel_expand_rx(&slots, i, to_rx)
             }
         }
 
         // RENDER: panels
-        panels_it := tiles_iter(&tiles)
-        for w in tiles_iter_next(&panels_it) {
-            b := tiles_window_to_box(w, f32(GRID_PX), [2]f32{tile.x, tile.y})
-            draw_panel(b)
+        panels_it := slots_panels(&slots)
+        for p in slots_panels_next(&panels_it) {
+            panel_rect := tile_to_rect(p.tile, f32(SLOT_PX), [2]f32{slots_rect.x, slots_rect.y})
+            draw_panel(panel_rect)
         }
 
         // RENDER: panels move/resize handles if edit mode
         if edit_mode {
-            draw_edit_shadow(tile)
+            draw_edit_shadow(slots_rect)
 
             // draw drag widgets, in the same order as the panels
-            handles_it := tiles_iter(&tiles)
-            for w, i in tiles_iter_next(&handles_it) {
-                box_panel := tiles_window_to_box(w, f32(GRID_PX), [2]f32{tile.x, tile.y})
+            handles_it := slots_panels(&slots)
+            for p, i in slots_panels_next(&handles_it) {
+                panel_rect := tile_to_rect(p.tile, f32(SLOT_PX), [2]f32{slots_rect.x, slots_rect.y})
 
                 // central move handle
-                box_move := box_centered(box_panel, {box_panel.w*0.6, 32})
-                draw_drag_handle(&tiles, DragType.Move, box_move, i)
+                move_handle_rect := rect_centered(panel_rect, {panel_rect.w*0.6, 32})
+                draw_drag_handle(&slots, DragType.Move, move_handle_rect, i)
 
                 // corner handles sit just inside the visible (inset) panel
-                box_corners := box_inset(box_panel, 16)
+                corners_rect := rect_inset(panel_rect, 16)
                 resize_size := [2]f32{32, 32}
-                draw_drag_handle(&tiles, DragType.ResizeUpLeft,    box_uplx(box_corners, resize_size), i)
-                draw_drag_handle(&tiles, DragType.ResizeUpRight,   box_uprx(box_corners, resize_size), i)
-                draw_drag_handle(&tiles, DragType.ResizeDownLeft,  box_dwlx(box_corners, resize_size), i)
-                draw_drag_handle(&tiles, DragType.ResizeDownRight, box_dwrx(box_corners, resize_size), i)
+                draw_drag_handle(&slots, DragType.ResizeUpLeft,    rect_uplx(corners_rect, resize_size), i)
+                draw_drag_handle(&slots, DragType.ResizeUpRight,   rect_uprx(corners_rect, resize_size), i)
+                draw_drag_handle(&slots, DragType.ResizeDownLeft,  rect_dwlx(corners_rect, resize_size), i)
+                draw_drag_handle(&slots, DragType.ResizeDownRight, rect_dwrx(corners_rect, resize_size), i)
             }
 
             // raising just sets an index - done after the loop so the iteration order above
             // doesn't shift mid-loop
-            if tiles.drag_op.active {
-                tiles.raised_idx = tiles.drag_op.win_idx
+            if slots.drag_op.active {
+                slots.raised_panel = slots.drag_op.panel_idx
             }
         }
 

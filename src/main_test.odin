@@ -425,59 +425,59 @@ test_grab_keyword_multiple_lines_advance_correctly :: proc(t: ^testing.T) {
 	testing.expect_value(t, idx2, len(text))
 }
 
-// 8x6 grid holding one 3x3 window at (2, 2) that may be 1..5 tiles wide/tall.
-make_resize_test_tiles :: proc() -> Tiles {
-	tiles := Tiles{n_w = 8, n_h = 6, raised_idx = -1}
-	append(&tiles.windows, TiledWindow{box = TiledBox{2, 2, 3, 3}, range_nw = {1, 5}, range_nh = {1, 5}})
-	return tiles
+// 8x6 slot grid holding one 3x3 panel at (2, 2) that may be 1..5 slots wide/tall.
+make_resize_test_slots :: proc() -> Slots {
+	slots := Slots{w = 8, h = 6, raised_panel = -1}
+	append(&slots.panels, Panel{tile = Tile{2, 2, 3, 3}, min_size = {1, 1}, max_size = {5, 5}})
+	return slots
 }
 
 @(test)
-test_tiles_window_expand_grows_each_edge :: proc(t: ^testing.T) {
-	tiles := make_resize_test_tiles()
-	testing.expect(t, tiles_window_expand_up(&tiles, 0, 1))
-	testing.expect_value(t, tiles.windows[0].box, TiledBox{2, 1, 3, 4})
-	testing.expect(t, tiles_window_expand_dw(&tiles, 0, 1))
-	testing.expect_value(t, tiles.windows[0].box, TiledBox{2, 1, 3, 5})
-	testing.expect(t, tiles_window_expand_lx(&tiles, 0, 1))
-	testing.expect_value(t, tiles.windows[0].box, TiledBox{1, 1, 4, 5})
-	testing.expect(t, tiles_window_expand_rx(&tiles, 0, 1))
-	testing.expect_value(t, tiles.windows[0].box, TiledBox{1, 1, 5, 5})
+test_slots_panel_expand_grows_each_edge :: proc(t: ^testing.T) {
+	slots := make_resize_test_slots()
+	testing.expect(t, slots_panel_expand_up(&slots, 0, 1))
+	testing.expect_value(t, slots.panels[0].tile, Tile{2, 1, 3, 4})
+	testing.expect(t, slots_panel_expand_dw(&slots, 0, 1))
+	testing.expect_value(t, slots.panels[0].tile, Tile{2, 1, 3, 5})
+	testing.expect(t, slots_panel_expand_lx(&slots, 0, 1))
+	testing.expect_value(t, slots.panels[0].tile, Tile{1, 1, 4, 5})
+	testing.expect(t, slots_panel_expand_rx(&slots, 0, 1))
+	testing.expect_value(t, slots.panels[0].tile, Tile{1, 1, 5, 5})
 }
 
 @(test)
-test_tiles_window_expand_shrinks_each_edge :: proc(t: ^testing.T) {
-	tiles := make_resize_test_tiles()
-	testing.expect(t, tiles_window_expand_up(&tiles, 0, -1))
-	testing.expect_value(t, tiles.windows[0].box, TiledBox{2, 3, 3, 2})
-	testing.expect(t, tiles_window_expand_dw(&tiles, 0, -1))
-	testing.expect_value(t, tiles.windows[0].box, TiledBox{2, 3, 3, 1})
-	testing.expect(t, tiles_window_expand_lx(&tiles, 0, -1))
-	testing.expect_value(t, tiles.windows[0].box, TiledBox{3, 3, 2, 1})
-	testing.expect(t, tiles_window_expand_rx(&tiles, 0, -1))
-	testing.expect_value(t, tiles.windows[0].box, TiledBox{3, 3, 1, 1})
+test_slots_panel_expand_shrinks_each_edge :: proc(t: ^testing.T) {
+	slots := make_resize_test_slots()
+	testing.expect(t, slots_panel_expand_up(&slots, 0, -1))
+	testing.expect_value(t, slots.panels[0].tile, Tile{2, 3, 3, 2})
+	testing.expect(t, slots_panel_expand_dw(&slots, 0, -1))
+	testing.expect_value(t, slots.panels[0].tile, Tile{2, 3, 3, 1})
+	testing.expect(t, slots_panel_expand_lx(&slots, 0, -1))
+	testing.expect_value(t, slots.panels[0].tile, Tile{3, 3, 2, 1})
+	testing.expect(t, slots_panel_expand_rx(&slots, 0, -1))
+	testing.expect_value(t, slots.panels[0].tile, Tile{3, 3, 1, 1})
 }
 
 @(test)
-test_tiles_window_expand_refuses_past_grid_edge :: proc(t: ^testing.T) {
-	tiles := make_resize_test_tiles()
-	tiles.windows[0].box = TiledBox{0, 0, 3, 3}
-	testing.expect(t, !tiles_window_expand_up(&tiles, 0, 1))
-	testing.expect(t, !tiles_window_expand_lx(&tiles, 0, 1))
-	tiles.windows[0].box = TiledBox{5, 3, 3, 3}
-	testing.expect(t, !tiles_window_expand_dw(&tiles, 0, 1))
-	testing.expect(t, !tiles_window_expand_rx(&tiles, 0, 1))
-	testing.expect_value(t, tiles.windows[0].box, TiledBox{5, 3, 3, 3})
+test_slots_panel_expand_refuses_past_slots_edge :: proc(t: ^testing.T) {
+	slots := make_resize_test_slots()
+	slots.panels[0].tile = Tile{0, 0, 3, 3}
+	testing.expect(t, !slots_panel_expand_up(&slots, 0, 1))
+	testing.expect(t, !slots_panel_expand_lx(&slots, 0, 1))
+	slots.panels[0].tile = Tile{5, 3, 3, 3}
+	testing.expect(t, !slots_panel_expand_dw(&slots, 0, 1))
+	testing.expect(t, !slots_panel_expand_rx(&slots, 0, 1))
+	testing.expect_value(t, slots.panels[0].tile, Tile{5, 3, 3, 3})
 }
 
 @(test)
-test_tiles_window_expand_refuses_outside_size_range :: proc(t: ^testing.T) {
-	tiles := make_resize_test_tiles()
-	tiles.windows[0].range_nw = {3, 3}
-	tiles.windows[0].range_nh = {3, 3}
-	testing.expect(t, !tiles_window_expand_up(&tiles, 0, 1))
-	testing.expect(t, !tiles_window_expand_dw(&tiles, 0, -1))
-	testing.expect(t, !tiles_window_expand_lx(&tiles, 0, -1))
-	testing.expect(t, !tiles_window_expand_rx(&tiles, 0, 1))
-	testing.expect_value(t, tiles.windows[0].box, TiledBox{2, 2, 3, 3})
+test_slots_panel_expand_refuses_outside_size_range :: proc(t: ^testing.T) {
+	slots := make_resize_test_slots()
+	slots.panels[0].min_size = {3, 3}
+	slots.panels[0].max_size = {3, 3}
+	testing.expect(t, !slots_panel_expand_up(&slots, 0, 1))
+	testing.expect(t, !slots_panel_expand_dw(&slots, 0, -1))
+	testing.expect(t, !slots_panel_expand_lx(&slots, 0, -1))
+	testing.expect(t, !slots_panel_expand_rx(&slots, 0, 1))
+	testing.expect_value(t, slots.panels[0].tile, Tile{2, 2, 3, 3})
 }
