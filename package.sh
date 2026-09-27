@@ -11,7 +11,8 @@ rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR"
 # -o:speed: release-optimized build (dev.sh uses the debug-friendly default instead).
 # -subsystem:windows: GUI subsystem, so launching the .exe doesn't also open a console window.
-./bin/odin/odin.exe build ./src -out:"$STAGE_DIR/$APP_NAME.exe" -o:speed -subsystem:windows
+# -resource: embeds assets/solaris.ico as the .exe's icon (see src/app.rc).
+./bin/odin/odin.exe build ./src -out:"$STAGE_DIR/$APP_NAME.exe" -o:speed -subsystem:windows -resource:src/app.rc
 
 echo "Copying assets..."
 cp -r assets "$STAGE_DIR/assets"

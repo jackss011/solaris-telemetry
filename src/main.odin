@@ -562,6 +562,11 @@ main :: proc() {
     defer rl.CloseWindow()
     rl.SetTargetFPS(60)
 
+    icon := rl.LoadImage("assets/solaris.png")
+    rl.ImageFormat(&icon, rl.PixelFormat.UNCOMPRESSED_R8G8B8A8) // GLFW requires RGBA8 for a window icon
+    rl.SetWindowIcon(icon)
+    rl.UnloadImage(icon)
+
     font := rl.LoadFontEx("assets/fonts/ShareTech-Regular.ttf", 32, nil, 0);
     defer rl.UnloadFont(font)
     rl.SetTextureFilter(font.texture, rl.TextureFilter.BILINEAR);
