@@ -270,3 +270,18 @@ grab_until :: proc(text: string, idx: int, needle: string) -> (found: bool, end_
 
     return false, len(text)
 }
+
+// Returns the matching _END marker for a GENERIC_READ_CONVERSION_START/GENERIC_WRITE_CONVERSION_START
+// keyword, or "" if `keyword_name` isn't one of those. Shared by parse_config_file's debug-print
+// driver and build_packet_defs (tlm_def.odin) - both need to switch out of keyword parsing into
+// grab_until's raw-line scan for exactly these two keywords (see cosmos-config-format.md's
+// Conversions section on why this pair is a mode switch, not a regular single-line keyword).
+generic_conversion_end_marker :: proc(keyword_name: string) -> string {
+    switch keyword_name {
+        case "GENERIC_READ_CONVERSION_START":
+            return "GENERIC_READ_CONVERSION_END"
+        case "GENERIC_WRITE_CONVERSION_START":
+            return "GENERIC_WRITE_CONVERSION_END"
+    }
+    return ""
+}

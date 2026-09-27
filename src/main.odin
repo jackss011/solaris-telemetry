@@ -28,14 +28,7 @@ parse_config_file :: proc(filepath: string) {
 
         // look for raw sections
         if keyword.token.type == TokenType.IDENT {
-            raw_mode_until: string
-
-            switch token_ref_text(keyword.token, text) {
-                case "GENERIC_READ_CONVERSION_START":
-                    raw_mode_until = "GENERIC_READ_CONVERSION_END"
-                case "GENERIC_WRITE_CONVERSION_START":
-                    raw_mode_until = "GENERIC_WRITE_CONVERSION_END"
-            }
+            raw_mode_until := generic_conversion_end_marker(token_ref_text(keyword.token, text))
 
             if raw_mode_until != "" {
                 found, end_idx := grab_until(text, idx, raw_mode_until)
