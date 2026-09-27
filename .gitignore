@@ -2,5 +2,6 @@
 !/bin/odin/README.md
 
 /build/
+/dist/
 *.exe
 *.pdb
