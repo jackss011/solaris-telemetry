@@ -1,2 +1,8 @@
 /bin/odin/*
 !/bin/odin/README.md
+
+/build/
+/dist/
+*.exe
+*.pdb
+*.res

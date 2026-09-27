@@ -2,7 +2,6 @@ package main
 
 import "core:os"
 import "core:fmt"
-import rl "vendor:raylib"
 
 // =========== PARSE ENTRY =============
 
@@ -52,38 +51,13 @@ parse_config_file :: proc(filepath: string) {
 
 
 main :: proc() {
-    fmt.println("Hello basic parse example!")
-    parse_config_file("examples/simple_tlm/tlm.txt")
+    run_viewer()
 }
 
-// main :: proc() {
-//     rl.InitWindow(1280, 720, "Telemetry Viewer")
-//     defer rl.CloseWindow()
-//     rl.SetTargetFPS(60)
-
-//     for !rl.WindowShouldClose() {
-//         rl.BeginDrawing()
-//         defer rl.EndDrawing()
-
-//         rl.ClearBackground(rl.Color{15, 15, 20, 255})
-
-//         // Rounded transparent panel
-//         rl.DrawRectangleRounded(
-//             rl.Rectangle{40, 40, 300, 150},
-//             0.15,   // roundness
-//             8,      // segments
-//             rl.Color{30, 30, 35, 160}, // fill, translucent
-//         )
-//         rl.DrawRectangleRoundedLinesEx(
-//             rl.Rectangle{40, 40, 300, 150},
-//             0.15, 8, 1.5,
-//             rl.Color{255, 255, 255, 60}, // border
-//         )
-
-//         // Text and values drawn straight on top
-//         rl.DrawText("VOLTAGE", 60, 60, 18, rl.WHITE)
-//         rl.DrawText("28.4 V", 60, 90, 32, rl.GREEN)
-
-//         rl.DrawFPS(10, 10)
-//     }
+// Console debug driver predating the UI (src/ui.odin) - still useful for inspecting how a
+// config file tokenizes/parses without the raylib window. Run by temporarily swapping the
+// call in main() above.
+// debug_print_config :: proc() {
+//     fmt.println("Hello basic parse example!")
+//     parse_config_file("examples/simple_tlm/tlm.txt")
 // }

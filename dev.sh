@@ -1,3 +1,4 @@
 echo "Running the software..."
 
-./bin/odin/odin.exe run ./src
+mkdir -p build
+./bin/odin/odin.exe run ./src -out:build/solaris.exe
