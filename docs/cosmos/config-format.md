@@ -1,9 +1,9 @@
 # COSMOS command/telemetry definition format (deep reference)
 
 This is the detailed keyword reference for the config language sampled in
-[`examples/simple_tlm/tlm.txt`](../examples/simple_tlm/tlm.txt) and targeted by the parser in
-[`src/main.odin`](../src/main.odin). See [`cosmos-overview.md`](./cosmos-overview.md) for why
-this format exists and [`cosmos-architecture.md`](./cosmos-architecture.md) for where these
+[`examples/simple_tlm/tlm.txt`](../../examples/simple_tlm/tlm.txt) and targeted by the parser in
+[`src/main.odin`](../../src/main.odin). See [`overview.md`](./overview.md) for why
+this format exists and [`architecture.md`](./architecture.md) for where these
 files live on disk (`config/targets/TARGET/cmd_tlm/*.txt`) and how they relate to the rest of
 a COSMOS deployment. Everything below is COSMOS v4 (sources at the bottom).
 

@@ -14,9 +14,9 @@ parser in `src/main.odin`. v5 restructured a lot of this (containerized services
 but kept the same conceptual model described below.
 
 This page stays at overview depth. For the full detail behind the two summaries below, see
-[`cosmos-architecture.md`](./cosmos-architecture.md) (deployment layout, `cmd_tlm_server.txt`,
+[`architecture.md`](./architecture.md) (deployment layout, `cmd_tlm_server.txt`,
 interfaces/protocols, chaining, binary logs) and
-[`cosmos-config-format.md`](./cosmos-config-format.md) (every `TELEMETRY`/`COMMAND` config
+[`config-format.md`](./config-format.md) (every `TELEMETRY`/`COMMAND` config
 keyword).
 
 ## Functional model

@@ -1,6 +1,6 @@
 # COSMOS architecture, interfaces, and the server config file
 
-This goes deeper than the "Software architecture" section of [`cosmos-overview.md`](./cosmos-overview.md)
+This goes deeper than the "Software architecture" section of [`overview.md`](./overview.md)
 on specifically: how a real COSMOS deployment is laid out on disk, how the Command and
 Telemetry Server is told what to connect to, and how the Interface/Protocol layer actually
 moves and delineates bytes. All of this is COSMOS v4 behavior (see sources at the bottom);
@@ -22,7 +22,7 @@ config/
   targets/
     BOB/                     # target dirs are UPPERCASE by convention
       target.txt             # per-target settings (REQUIRE, IGNORE_ITEM, ...)
-      cmd_tlm/                # *.txt command/telemetry definitions (see cosmos-config-format.md)
+      cmd_tlm/                # *.txt command/telemetry definitions (see config-format.md)
       lib/                    # target-specific Ruby (custom Interfaces, conversions, ...)
       procedures/             # test/ops scripts for this target
       screens/                # Telemetry Viewer screen definitions

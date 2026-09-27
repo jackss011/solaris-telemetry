@@ -56,7 +56,7 @@ test_grab_token_string :: proc(t: ^testing.T) {
 @(test)
 test_grab_token_string_with_printf_specifier :: proc(t: ^testing.T) {
 	// FORMAT_STRING values are printf-style format specifiers, e.g. tlm.txt's
-	// `FORMAT_STRING "%0.3f"` on the VOLTAGE item (cosmos-config-format.md's item modifier
+	// `FORMAT_STRING "%0.3f"` on the VOLTAGE item (docs/cosmos/config-format.md's item modifier
 	// table: `FORMAT_STRING <printf-format>`). The '%' and '.' inside the quotes must not be
 	// mistaken for the start of a new token.
 	text := `"%0.3f"`
@@ -68,7 +68,7 @@ test_grab_token_string_with_printf_specifier :: proc(t: ^testing.T) {
 @(test)
 test_grab_token_string_with_punctuation :: proc(t: ^testing.T) {
 	// Quoted descriptions are free-form text (e.g. TELEMETRY's ["description"] param in
-	// cosmos-config-format.md) and can contain parentheses, apostrophes, etc.
+	// docs/cosmos/config-format.md) and can contain parentheses, apostrophes, etc.
 	text := `"Instrument's Health (nominal)"`
 	token := grab_token(text, 0)
 	testing.expect_value(t, token.type, TokenType.STR)
@@ -77,7 +77,7 @@ test_grab_token_string_with_punctuation :: proc(t: ^testing.T) {
 
 @(test)
 test_grab_token_negative_float :: proc(t: ^testing.T) {
-	// LIMITS thresholds (cosmos-config-format.md's LIMITS row: <red-low> <yellow-low> ...) are
+	// LIMITS thresholds (docs/cosmos/config-format.md's LIMITS row: <red-low> <yellow-low> ...) are
 	// plausibly floats, not just ints as in tlm.txt's example, and can be negative.
 	text := "-10.5 "
 	token := grab_token(text, 0)
@@ -208,7 +208,7 @@ test_grab_until_matches_first_line :: proc(t: ^testing.T) {
 
 @(test)
 test_grab_until_generic_conversion_block_spans_multiple_lines_with_code :: proc(t: ^testing.T) {
-	// cosmos-config-format.md's GENERIC_READ_CONVERSION_START/END section: the body between
+	// docs/cosmos/config-format.md's GENERIC_READ_CONVERSION_START/END section: the body between
 	// the two markers is arbitrary Ruby, captured verbatim line-by-line and never tokenized,
 	// so code that itself looks tokenizable (parens, quotes, operators) must not confuse the
 	// END-line scan. Modeled on tlm.txt's DURATION item body
@@ -262,7 +262,7 @@ test_grab_keyword_zero_params :: proc(t: ^testing.T) {
 
 @(test)
 test_grab_keyword_item_negative_bit_offset :: proc(t: ^testing.T) {
-	// cosmos-config-format.md item notes: "Bit offset is measured from the MSB; a negative
+	// docs/cosmos/config-format.md item notes: "Bit offset is measured from the MSB; a negative
 	// offset means 'from the end of the packet.'" ITEM's param order is
 	// name, bit offset, bit size, data type, [description].
 	text := `ITEM FOO -32 32 UINT "Signal from end of packet"
@@ -277,7 +277,7 @@ test_grab_keyword_item_negative_bit_offset :: proc(t: ^testing.T) {
 
 @(test)
 test_grab_keyword_limits_with_green_thresholds :: proc(t: ^testing.T) {
-	// cosmos-config-format.md: LIMITS <set> <persistence> <ENABLED|DISABLED> <red-low>
+	// docs/cosmos/config-format.md: LIMITS <set> <persistence> <ENABLED|DISABLED> <red-low>
 	// <yellow-low> <yellow-high> <red-high> [green-low] [green-high] — the trailing green
 	// bounds are optional. tlm.txt's TEMP1 item supplies them:
 	// `LIMITS DEFAULT 3 ENABLED -10 -5 40 45 0 30`.
@@ -291,7 +291,7 @@ test_grab_keyword_limits_with_green_thresholds :: proc(t: ^testing.T) {
 @(test)
 test_grab_keyword_limits_without_green_thresholds :: proc(t: ^testing.T) {
 	// Same LIMITS keyword, but omitting the optional [green-low] [green-high] pair, per
-	// cosmos-config-format.md marking those two params optional.
+	// docs/cosmos/config-format.md marking those two params optional.
 	text := "LIMITS DEFAULT 1 ENABLED -10 -5 40 45\n"
 	keyword, _ := grab_keyword(text, 0)
 	testing.expect_value(t, keyword.params_count, 7)
@@ -300,7 +300,7 @@ test_grab_keyword_limits_without_green_thresholds :: proc(t: ^testing.T) {
 
 @(test)
 test_grab_keyword_limits_with_float_thresholds :: proc(t: ^testing.T) {
-	// tlm.txt's LIMITS example uses integer thresholds, but cosmos-config-format.md doesn't
+	// tlm.txt's LIMITS example uses integer thresholds, but docs/cosmos/config-format.md doesn't
 	// restrict them to ints; a real target's thresholds are plausibly floats.
 	text := "LIMITS DEFAULT 3 ENABLED -10.5 -5.25 40.5 45.75\n"
 	keyword, _ := grab_keyword(text, 0)
@@ -312,7 +312,7 @@ test_grab_keyword_limits_with_float_thresholds :: proc(t: ^testing.T) {
 
 @(test)
 test_grab_keyword_state_with_color :: proc(t: ^testing.T) {
-	// cosmos-config-format.md: `STATE <key> <value> [GREEN|YELLOW|RED]` — the color is an
+	// docs/cosmos/config-format.md: `STATE <key> <value> [GREEN|YELLOW|RED]` — the color is an
 	// optional trailing param.
 	text := "STATE SPECIAL 1 YELLOW\n"
 	keyword, _ := grab_keyword(text, 0)
@@ -331,7 +331,7 @@ test_grab_keyword_state_without_color :: proc(t: ^testing.T) {
 
 @(test)
 test_grab_keyword_select_telemetry_reopen :: proc(t: ^testing.T) {
-	// cosmos-config-format.md: `SELECT_TELEMETRY <target> <packet-name>` reopens an existing
+	// docs/cosmos/config-format.md: `SELECT_TELEMETRY <target> <packet-name>` reopens an existing
 	// packet (the mechanism tlm_override.txt-style files rely on).
 	text := "SELECT_TELEMETRY YEP01 HEALTH_STATUS\n"
 	keyword, _ := grab_keyword(text, 0)
@@ -343,7 +343,7 @@ test_grab_keyword_select_telemetry_reopen :: proc(t: ^testing.T) {
 
 @(test)
 test_grab_keyword_select_item_reopen :: proc(t: ^testing.T) {
-	// cosmos-config-format.md: `SELECT_ITEM <item name>` reopens an item to add modifiers.
+	// docs/cosmos/config-format.md: `SELECT_ITEM <item name>` reopens an item to add modifiers.
 	text := "SELECT_ITEM VOLTAGE\n"
 	keyword, _ := grab_keyword(text, 0)
 	testing.expect_value(t, token_ref_text(keyword.token, text), "SELECT_ITEM")
@@ -353,7 +353,7 @@ test_grab_keyword_select_item_reopen :: proc(t: ^testing.T) {
 
 @(test)
 test_grab_keyword_append_item_with_endianness :: proc(t: ^testing.T) {
-	// cosmos-config-format.md's APPEND_ITEM row: name, bit size, data type, [description],
+	// docs/cosmos/config-format.md's APPEND_ITEM row: name, bit size, data type, [description],
 	// [endianness] — endianness (BIG_ENDIAN/LITTLE_ENDIAN) is an optional trailing param that
 	// overrides the packet-level endianness for this one item.
 	text := `APPEND_ITEM VOLTAGE 32 FLOAT "Measured bus voltage" LITTLE_ENDIAN
@@ -395,7 +395,7 @@ FOO 1
 
 @(test)
 test_grab_keyword_multiple_spaces_and_tabs_between_params :: proc(t: ^testing.T) {
-	// cosmos-config-format.md: "Files are plain text, one keyword per line (leading whitespace
+	// docs/cosmos/config-format.md: "Files are plain text, one keyword per line (leading whitespace
 	// is just for readability)" — COSMOS config lines are free-form whitespace-separated, and
 	// tlm.txt itself indents/aligns params with runs of spaces (e.g. the APPEND_ID_ITEM block).
 	text := "APPEND_ITEM   VOLTAGE\t\t32\tFLOAT   \"Measured bus voltage\"\n"

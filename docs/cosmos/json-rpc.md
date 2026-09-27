@@ -1,9 +1,9 @@
 # JSON-RPC 2.0
 
-A reference for the transport-layer protocol underneath [`cosmos-api.md`](./cosmos-api.md) —
+A reference for the transport-layer protocol underneath [`api.md`](./api.md) —
 COSMOS v4's own API is explicitly "a relaxed JSON-RPC 2.0" (its words). This doc covers the
 *actual* spec, then calls out exactly where COSMOS deviates from it, since that gap matters for
-anyone designing Solaris's own client/server transport (per `cosmos-lessons.md`'s point that
+anyone designing Solaris's own client/server transport (per `lessons.md`'s point that
 the API being plain HTTP + JSON is a low bar for any language, not just Ruby, to implement).
 
 ## What it is
@@ -85,26 +85,26 @@ all, not even an empty array.
 
 ## Where COSMOS v4's API deviates ("relaxed JSON-RPC 2.0")
 
-Cross-referencing [`cosmos-api.md`](./cosmos-api.md#transport-and-envelope):
+Cross-referencing [`api.md`](./api.md#transport-and-envelope):
 
 | Spec behavior | COSMOS v4's actual behavior |
 |---|---|
 | `id: null` is a legal (if discouraged) request/notification marker | Not supported — every COSMOS call expects a real response, so there's no true fire-and-forget notification |
 | JSON numbers only (`NaN`/`Infinity`/`-Infinity` are invalid JSON) | Allowed as literals, since a telemetry conversion (e.g. divide-by-zero in a `POLY_READ_CONVERSION`) can legitimately produce one |
 | `params` may be an Array *or* an Object (named args) | **Positional only** — always an Array, never named parameters |
-| Batching is a core, mandatory-to-support feature | **Not supported** — every call is its own HTTP round trip, which is why `get_tlm_values`/`get_tlm_packet`-style multi-item methods exist as an app-level workaround (see `cosmos-api.md`) |
+| Batching is a core, mandatory-to-support feature | **Not supported** — every call is its own HTTP round trip, which is why `get_tlm_values`/`get_tlm_packet`-style multi-item methods exist as an app-level workaround (see `api.md`) |
 | Transport-agnostic | COSMOS fixes it to plain HTTP POST to one port (default `7777`) |
-| No auth defined by the spec (left to the transport) | COSMOS v4 defines none either — `ALLOW_ACCESS` IP whitelisting in `system.txt` is the only gate (`cosmos-architecture.md`) |
+| No auth defined by the spec (left to the transport) | COSMOS v4 defines none either — `ALLOW_ACCESS` IP whitelisting in `system.txt` is the only gate (`architecture.md`) |
 
 ## Implications for Solaris
 
 - The spec itself is a genuinely good, minimal fit for "one server, many thin clients" (the
-  functional model in `cosmos-overview.md`) regardless of what language either side is written
+  functional model in `overview.md`) regardless of what language either side is written
   in — adopting *unmodified* JSON-RPC 2.0 (rather than COSMOS's relaxed dialect) would get
-  Solaris real batching for free, which directly addresses `cosmos-lessons.md`'s point #2 about
+  Solaris real batching for free, which directly addresses `lessons.md`'s point #2 about
   COSMOS's API making N round trips where one would do.
 - Batching is not the same thing as push — a JSON-RPC batch is still client-initiated. If
-  Solaris wants server-initiated updates (the bigger lesson from `cosmos-lessons.md` point #2),
+  Solaris wants server-initiated updates (the bigger lesson from `lessons.md` point #2),
   JSON-RPC would need to ride on a transport that supports server push (WebSocket, SSE) with
   notifications (no `id`) as the message shape for "value changed" events, rather than trying to
   make plain request/response HTTP do that job.
@@ -120,4 +120,4 @@ Cross-referencing [`cosmos-api.md`](./cosmos-api.md#transport-and-envelope):
 ## Sources
 
 - [JSON-RPC 2.0 Specification](https://www.jsonrpc.org/specification)
-- [`cosmos-api.md`](./cosmos-api.md) — COSMOS v4's own relaxed dialect and full method list
+- [`api.md`](./api.md) — COSMOS v4's own relaxed dialect and full method list

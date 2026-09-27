@@ -13,7 +13,7 @@ flexibility that hasn't been needed yet.
 ## Abstract after duplication shows up, not before
 
 The single most important rule. Don't write a generic `Interface`/`Protocol` abstraction (see
-`cosmos-architecture.md`'s Ruby-class-per-interface model as an example of the *kind* of thing
+`docs/cosmos/architecture.md`'s Ruby-class-per-interface model as an example of the *kind* of thing
 to avoid pre-building) until there are at least two concrete, real call sites that need it and
 the shared shape between them is obvious. A speculative abstraction built for "the second thing
 that will probably show up later" almost always guesses the wrong shape, and now there's an

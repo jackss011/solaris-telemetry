@@ -1,7 +1,7 @@
 # COSMOS v4 JSON API
 
 How every GUI tool and script actually talks to the Command and Telemetry Server (see
-`cosmos-overview.md`'s "every GUI tool is a thin client" point). Relevant to Solaris if/when it
+`overview.md`'s "every GUI tool is a thin client" point). Relevant to Solaris if/when it
 grows beyond a static definition viewer into something that connects to a live server — either
 COSMOS's own, or a future Solaris server of its own. v4 only; sources at the bottom.
 
@@ -18,7 +18,7 @@ COSMOS's own, or a future Solaris server of its own. v4 only; sources at the bot
   - No batched requests (each call is its own HTTP round trip).
 - No authentication is documented for v4 — the API's security model is "whoever can reach the
   port can call anything," which is consistent with `ALLOW_ACCESS` in `system.txt` being the
-  only access control (`cosmos-architecture.md`). Worth treating as a deliberate risk-accepted
+  only access control (`architecture.md`). Worth treating as a deliberate risk-accepted
   choice for a lab-bench tool, not something to replicate silently in a design meant for
   anything more exposed.
 - The full method list lives in COSMOS's own source (`@api_whitelist` in
@@ -42,7 +42,7 @@ straight to an interface.
 `get_cmd_time(target = nil, cmd = nil)`, `get_cmd_cnt(target, cmd)`.
 
 **Telemetry reads** — `tlm(*args)`/`tlm_raw(*args)`/`tlm_formatted(*args)`/
-`tlm_with_units(*args)` mirror the four value stages from `cosmos-screens.md`'s widget binding
+`tlm_with_units(*args)` mirror the four value stages from `screens.md`'s widget binding
 (`RAW`/`CONVERTED`/`FORMATTED`/`WITH_UNITS`); `tlm_variable(*args)` is the same read but with the
 value-type passed as a parameter instead of baked into the method name.
 `get_tlm_packet(target, packet, value_type = :CONVERTED)`/`get_tlm_values(item_array,
@@ -54,7 +54,7 @@ locally), `inject_tlm(target, packet, item_hash = nil, value_type = :CONVERTED, 
 true, send_packet_log_writers = true, create_new_logs = false)` (fabricate a whole packet as if
 it arrived from the target), `override_tlm(*args)`/`override_tlm_raw(*args)`/
 `normalize_tlm(*args)` (pin an item to a constant, then release it) — this is the API-level
-equivalent of the `Override` protocol from `cosmos-architecture.md`, exposed for scripted use
+equivalent of the `Override` protocol from `architecture.md`, exposed for scripted use
 instead of interface-time config.
 
 **Telemetry information** — `get_tlm_buffer(target, packet)`, `get_tlm_list(target)`,
@@ -88,11 +88,11 @@ introspect what logger instances exist.
 
 **Introspection** — `get_target_list`, `get_target_info(target)`/`get_all_target_info`,
 `get_target_ignored_parameters(target)`/`get_target_ignored_items(target)` (surfaces
-`target.txt`'s `IGNORE_PARAMETER`/`IGNORE_ITEM`, see `cosmos-architecture.md`),
+`target.txt`'s `IGNORE_PARAMETER`/`IGNORE_ITEM`, see `architecture.md`),
 `get_all_tlm_info`/`get_all_cmd_info`, `get_tlm_item_list`/`get_cmd_param_list`,
 `get_tlm_details` — this is what lets a generic client (like Command Sender or Packet Viewer)
 build its UI purely from server-reported definitions instead of having them compiled in, i.e.
-the API surface makes the declarative config in `cosmos-config-format.md` introspectable at
+the API surface makes the declarative config in `config-format.md` introspectable at
 runtime, not just load-time.
 
 **Event subscriptions** — `subscribe_limits_events(queue_size = ...)`/
@@ -103,14 +103,14 @@ each return an id, paired with `unsubscribe_*(id)` and polling drains
 it's actually still pull-shaped: a client subscribes, then has to keep calling a `get_*` method
 to drain its queue (`non_block` just controls whether an empty queue blocks or returns
 immediately). There's no server-initiated push (no websocket/SSE in v4) — see
-`cosmos-lessons.md`.
+`lessons.md`.
 
 **Replay** — `replay_select_file(filename, reader = "DEFAULT")`, `replay_status`,
 `replay_set_playback_delay(delay)`, `replay_play`/`replay_reverse_play`/`replay_stop`,
 `replay_step_forward`/`replay_step_back` for frame-stepping, and direct seeking
 (`replay_move_start`/`replay_move_end`/`replay_move_index(index)`) — notably, direct seek is
 possible here at the API level even though the underlying binary log format is not
-random-access (`cosmos-architecture.md`'s "have to parse a log from the start" point); the
+random-access (`architecture.md`'s "have to parse a log from the start" point); the
 replay engine must be doing the linear scan internally and presenting a seek-like interface on
 top.
 
@@ -120,10 +120,10 @@ files without restarting the process), `cmd_tlm_clear_counters`, `get_background
 runs alongside its interfaces).
 
 **Screen & saved-config introspection** — `get_screen_list(config_filename = nil, force_refresh =
-false)`/`get_screen_definition(screen_full_name, ...)` let a client fetch `cosmos-screens.md`
+false)`/`get_screen_definition(screen_full_name, ...)` let a client fetch `screens.md`
 screen files from the server instead of reading them off disk itself;
 `get_saved_config(configuration_name = nil)` reads from `outputs/saved_config/`
-(`cosmos-architecture.md`); `get_output_logs_filenames(filter = '*tlm.bin')` lists log files by
+(`architecture.md`); `get_output_logs_filenames(filter = '*tlm.bin')` lists log files by
 glob.
 
 ## Practical implications for a client (or a Solaris-side server)

@@ -5,11 +5,19 @@ Guidance for Claude Code (and other coding agents) working in this repo.
 ## Project overview
 
 Solaris is a **COSMOS-inspired telemetry viewer**, written in [Odin](https://odin-lang.org/)
-using `vendor:raylib` for rendering. The parser has grown past a bare tokenizer into a real
-two-layer design (see "Architecture" below), but the project is still pre-UI: it parses
-`examples/simple_tlm/tlm.txt` and debug-prints what it found — nothing is rendered yet, and
-parsed keywords aren't turned into semantic `Packet`/`Item` structures. See "Current state"
-below.
+using `vendor:raylib` for rendering. `src/main.odin` currently holds two pieces that don't talk
+to each other yet:
+
+1. A telemetry-definition **parser** that has grown past a bare tokenizer into a real two-layer
+   design (see "Architecture" below) — it parses `examples/simple_tlm/tlm.txt` and debug-prints
+   what it found. Parsed keywords aren't yet turned into semantic `Packet`/`Item` structures.
+2. A working **raylib UI** — a tile grid you click to spawn draggable placeholder window panels,
+   with a Tab-toggled edit mode for moving them around. This is what actually runs (`main`'s
+   entry point is the UI, not the parser) but it has no knowledge of parsed telemetry yet; panels
+   are generic placeholders, not real data.
+
+See [`docs/solaris-architecture.md`](./docs/solaris-architecture.md) for the UI in full detail,
+including exactly where the disconnect between the two halves is and what's still missing.
 
 ## Setup
 
@@ -36,6 +44,11 @@ CI config and no formatter config in this repo currently. There is a small test 
 mkdir -p build && ./bin/odin/odin.exe test ./src -out:build/solaris_test.exe
 ```
 
+To produce a distributable build (release-optimized, no console window, zipped with its
+`assets/` alongside it), use `./package.sh` — it writes to `dist/` (also gitignored) rather than
+`build/`. See that script's comments for the exact `odin build` flags (`-o:speed`,
+`-subsystem:windows`).
+
 ## Architecture
 
 - `src/main.odin` — single-file program, split into three parts:
@@ -55,17 +68,20 @@ mkdir -p build && ./bin/odin/odin.exe test ./src -out:build/solaris_test.exe
     line-by-line for a line whose first word matches — the inline Ruby body in between is
     captured as one raw span (`keyword.raw_idx_start`/`raw_idx_end`) and never tokenized. This
     is deliberate: those bodies are arbitrary Ruby expressions, not COSMOS keyword syntax (see
-    `cosmos-lessons.md` point #3 on config-embedded scripting).
+    `docs/cosmos/lessons.md` point #3 on config-embedded scripting).
   - **Entry point** (`parse_config_file`) — reads a file, loops `grab_keyword`, special-cases
     the two `GENERIC_*_CONVERSION_START` keywords into raw-capture mode, and debug-prints every
     keyword + its params (+ raw body, if any) via `print_keyword`. This is still print-only:
     keywords aren't yet interpreted semantically — `TELEMETRY`, `ITEM`, `STATE`, `LIMITS`, etc.
     all flow through as generic `Keyword{ident, params}` values with no COSMOS-aware structure
     built on top. Turning that into real `Packet`/`Item` data (per
-    `docs/cosmos-config-format.md`'s keyword tables) is the next layer up.
-  - **Commented-out code** at the bottom of the file: a raylib window loop that draws a
-    telemetry-style panel (voltage readout, etc.). This is the intended eventual UI direction
-    but is disabled — treat it as a sketch/reference, not live code.
+    `docs/cosmos/config-format.md`'s keyword tables) is the next layer up.
+  - **The raylib UI** (`Box`, `TiledBox`/`TiledWindow`/`Tiles`, `DragOperation`, and `main`'s
+    render loop) — a tile grid + draggable window-panel prototype that is genuinely live (it's
+    `main`'s entry point) but **not connected to the parser above**: clicking an empty grid cell
+    spawns a fixed-size placeholder panel, not a real parsed telemetry packet. See
+    [`docs/solaris-architecture.md`](./docs/solaris-architecture.md) for the full design
+    (tile-grid model, z-ordering, drag/edit-mode mechanics, render loop, known gaps).
 - `src/main_test.odin` — `core:testing`-based tests, now covering all three parser layers
   (`is_ascii_letter`, `grab_token` across every token type including EOF, `grab_until` for both
   found/not-found, `grab_keyword` including blank/comment-line skipping and EOF). Run via the
@@ -82,9 +98,12 @@ mkdir -p build && ./bin/odin/odin.exe test ./src -out:build/solaris_test.exe
 ## Documentation
 
 Deeper reference material (beyond this quick-orientation file) lives in `docs/` —
-see `docs/README.md` for the index. Notably `docs/cosmos-overview.md` explains how the real
-COSMOS system this project is inspired by works, functionally and in software, which is
-useful background before extending the telemetry-definition parser.
+see `docs/README.md` for the index. Notably: `docs/solaris-architecture.md` covers this repo's
+own code (the parser above, and the raylib UI in far more depth than this file does);
+`docs/cosmos/overview.md` explains how the real COSMOS system this project is inspired by works,
+functionally and in software, useful background before extending the telemetry-definition parser;
+and `docs/references.md` collects external links (Odin, raylib, the UI font/license, COSMOS/OpenC3
+upstream) worth having open while working here.
 
 ## Known issues / gotchas
 
@@ -101,10 +120,17 @@ useful background before extending the telemetry-definition parser.
   positional params than that will `assert` (crash), not error gracefully. Worth keeping in mind
   if `examples/simple_tlm/tlm.txt` grows lines with long param lists (e.g. multi-segment
   `SEG_POLY_READ_CONVERSION` chains).
+- The raylib UI has **no test coverage at all** (only the parser's token/keyword layers are
+  tested — see above), and its debug prints (`fmt.println`/`fmt.printfln`) go nowhere in the
+  packaged `-subsystem:windows` release build (see `package.sh`) since it has no console attached.
+  See `docs/solaris-architecture.md`'s "Known gaps" for this and other UI-side loose ends.
 
 ## Conventions
 
 - Odin package `main`, procedures in `snake_case`, types in `PascalCase` (see `TokenType`
   enum in `main.odin`) — follow existing style rather than introducing a different convention.
-- Keep the raylib UI code commented-out block in sync conceptually if you extend the parser
-  output — the eventual goal is feeding parsed telemetry definitions into that rendering loop.
+- The raylib UI (`main`) and the parser (`parse_config_file`) are currently independent — the
+  eventual goal is feeding real parsed telemetry definitions into the tile/window-manager UI in
+  place of today's generic placeholder panels. Keep that direction in mind when extending either
+  side (e.g. a `Packet`/`Item` semantic layer should shape itself around what the UI will need to
+  display, not just around `tlm.txt`'s keyword syntax).

@@ -38,7 +38,7 @@ suffix that picks which stage of the read pipeline to display:
 | `FORMATTED` | after `FORMAT_STRING` |
 | `WITH_UNITS` | formatted + `UNITS` suffix appended |
 
-This is a direct, visible expression of the `docs/cosmos-config-format.md` read pipeline —
+This is a direct, visible expression of the `docs/cosmos/config-format.md` read pipeline —
 raw → converted → formatted → with-units is the same ladder a widget picks a rung on.
 
 ## Layout containers
@@ -143,7 +143,7 @@ The commented-out raylib loop in `src/main.odin` sketches exactly one thing this
 formalizes: a labeled value readout. The full language above suggests the shape a Solaris
 "screen" concept could eventually take — a small set of composable primitives (containers +
 bound value widgets + limits-driven coloring) driven by data, not hand-written per-panel Go/Odin
-code. Two design choices worth *not* copying wholesale (see `cosmos-lessons.md` for the reasoning):
+code. Two design choices worth *not* copying wholesale (see `lessons.md` for the reasoning):
 - Polling-period-per-screen (`SCREEN ... 1.0`) rather than push-on-change, which wastes CPU on
   static values and adds latency on fast-changing ones.
 - Free-floating Ruby snippets embedded directly in `BUTTON`/canvas conditionals, which makes a

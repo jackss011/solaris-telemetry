@@ -9,6 +9,8 @@ ZIP_PATH="$DIST_DIR/$APP_NAME.zip"
 echo "Building release binary..."
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR"
+# -o:speed: release-optimized build (dev.sh uses the debug-friendly default instead).
+# -subsystem:windows: GUI subsystem, so launching the .exe doesn't also open a console window.
 ./bin/odin/odin.exe build ./src -out:"$STAGE_DIR/$APP_NAME.exe" -o:speed -subsystem:windows
 
 echo "Copying assets..."

@@ -34,7 +34,7 @@ them as two layers:
    `TlmItemDef` values — i.e. actually interpret `TELEMETRY`/`APPEND_ITEM`/`LIMITS`/`STATE`/etc.
    instead of just printing them. **This does not exist yet** and is a hard prerequisite for
    everything below — there is no `tlm_id` to map a packet to until packet definitions exist as
-   data. `docs/cosmos-config-format.md`'s keyword tables are the reference for what each keyword
+   data. `docs/cosmos/config-format.md`'s keyword tables are the reference for what each keyword
    means.
 2. **Telemetry database** (dynamic, runtime): given a raw `[]u8` packet and a timestamp, resolve
    it against the definitions from (1), assign/look up its `tlm_id`, store it, and notify
@@ -49,7 +49,7 @@ This plan is mostly about (2), but (1) has to happen first, so it's included as 
   Ruby duck-typing for.
 - **Flat data over deep abstraction.** A packet registry is an array of `TlmPacketDef`, not a
   tree of interface-implementing objects. Don't introduce a generic "Interface"/"Protocol"
-  abstraction layer (`cosmos-architecture.md`'s Ruby-class-per-interface model) until there are
+  abstraction layer (`docs/cosmos/architecture.md`'s Ruby-class-per-interface model) until there are
   two concrete things that need it.
 - **Explicit ownership, no hidden allocation.** Ingesting a packet should not allocate on the
   hot path by default — reuse buffers, prefer fixed-capacity arrays sized like
@@ -58,11 +58,11 @@ This plan is mostly about (2), but (1) has to happen first, so it's included as 
 - **Return data, don't print it.** Exactly the lesson `CLAUDE.md` already draws from
   `grab_token`/`grab_keyword` vs. `parse_config_file`: every new procedure here returns a value
   a test can assert on.
-- **One bit-numbering convention, not COSMOS's.** `docs/cosmos-lessons.md` point #1 flags
+- **One bit-numbering convention, not COSMOS's.** `docs/cosmos/lessons.md` point #1 flags
   COSMOS's little-endian-bitfield special case as a wart worth not inheriting. Item extraction
   in this plan computes physical bit position from `(byte_order, bit_offset, bit_size)`
   internally — the config author (and this code) never pre-swaps.
-- **Push, not poll, for notification** — `docs/cosmos-lessons.md` point #2. But start with the
+- **Push, not poll, for notification** — `docs/cosmos/lessons.md` point #2. But start with the
   simplest possible mechanism (see milestone 5), not a generic pub/sub framework.
 
 ## 3. Data model
@@ -79,7 +79,7 @@ TlmItemType :: enum {
 }
 
 // Discriminates an item's role without a v-table: a plain item, an id item (used to identify
-// which packet definition a chunk of bytes matches — cosmos-config-format.md's ID_ITEM), or an
+// which packet definition a chunk of bytes matches — docs/cosmos/config-format.md's ID_ITEM), or an
 // array item. Tag lives in TlmItemDef.kind; this holds only the kind-specific extra data.
 TlmItemKind :: enum {
     Plain,
@@ -89,7 +89,7 @@ TlmItemKind :: enum {
 
 TlmItemDef :: struct {
     name:          string,
-    bit_offset:    int,   // from start of packet; negative = from end (cosmos-config-format.md)
+    bit_offset:    int,   // from start of packet; negative = from end (docs/cosmos/config-format.md)
     bit_size:      int,
     type:          TlmItemType,
     little_endian: bool,
@@ -160,9 +160,9 @@ Ordered; each should land as its own commit with its own tests, mirroring how th
    (or an `Error` enum return instead of bare `ok` — see the Odin skill on error signaling)
    drives `grab_keyword` in a loop and interprets `TELEMETRY` (open a packet), `APPEND_ITEM`/
    `APPEND_ID_ITEM`/`ITEM`/`ID_ITEM` (append/insert an item, tracking running bit offset for the
-   `APPEND_*` family per `cosmos-config-format.md`), and item modifiers (`UNITS`,
+   `APPEND_*` family per `docs/cosmos/config-format.md`), and item modifiers (`UNITS`,
    `FORMAT_STRING`, `LIMITS`, `STATE`, `DESCRIPTION`) attaching to *the most recently defined
-   item* — exactly the semantics `cosmos-config-format.md`'s "Item modifiers" section documents.
+   item* — exactly the semantics `docs/cosmos/config-format.md`'s "Item modifiers" section documents.
    `LIMITS`/`STATE`/`UNITS`/`FORMAT_STRING` data isn't in the §3 struct yet; add fields (or a
    side-table keyed by item index) as this milestone actually needs them — don't pre-build
    fields nothing reads yet. Test against `examples/simple_tlm/tlm.txt` directly: assert the
@@ -206,7 +206,7 @@ Ordered; each should land as its own commit with its own tests, mirroring how th
    where `TlmValue` is a small tagged union over the `TlmItemType` variants. This is where the
    bit-offset/endianness computation from §2's "one bit-numbering convention" principle actually
    gets implemented — write this milestone's tests directly from
-   `docs/cosmos-lessons.md`'s point #1 (a little-endian bitfield case modeled on OpenC3's own
+   `docs/cosmos/lessons.md`'s point #1 (a little-endian bitfield case modeled on OpenC3's own
    worked example) since that's the sharpest edge case in the whole format.
 
 Each milestone's procedures take their inputs as parameters and return values — no procedure in
@@ -217,8 +217,8 @@ values + event ring buffer) is threaded through explicitly by the caller.
 
 - Multi-threaded ingestion / locking. Milestone 3's `tlm_db_ingest` is single-threaded; revisit
   only once there's a real second thread (e.g. a network interface reader) that needs it.
-- Historical/logged storage (`cosmos-architecture.md`'s binary log format) — latest-value only.
-- The `Override`/`normalize_tlm` style value-pinning from `cosmos-api.md` — no API surface at all
+- Historical/logged storage (`docs/cosmos/architecture.md`'s binary log format) — latest-value only.
+- The `Override`/`normalize_tlm` style value-pinning from `docs/cosmos/api.md` — no API surface at all
   yet, this plan is the in-process data model underneath one.
 - Command (outgoing) packets — telemetry (incoming) only, matching this repo's name.
 

@@ -7,7 +7,7 @@ didn't), and concrete implications for Solaris. Treat this as a running list to 
 
 ## 1. The bit-offset model has a documented, confusing special case
 
-`cosmos-config-format.md` states the general rule cleanly: bit offset is measured from the MSB
+`config-format.md` states the general rule cleanly: bit offset is measured from the MSB
 of the packet, negative counts from the end. But for **`LITTLE_ENDIAN` items narrower than a
 byte and not byte-aligned** (bitfields), COSMOS v4/OpenC3 requires the offset to be computed in
 *big-endian bit space* regardless of the item's declared endianness — i.e. the same field's
@@ -31,8 +31,8 @@ Source: [Little Endian Bitfields (OpenC3 docs)](https://docs.openc3.com/docs/gui
 
 ## 2. Everything is pull, nothing is push
 
-Across the GUI tools (`cosmos-screens.md`'s `SCREEN width height POLLING_PERIOD`) and the API
-(`cosmos-api.md`'s "subscribe" calls that still require polling a `get_*_event` drain method),
+Across the GUI tools (`screens.md`'s `SCREEN width height POLLING_PERIOD`) and the API
+(`api.md`'s "subscribe" calls that still require polling a `get_*_event` drain method),
 v4 has no server-initiated push. A screen redraws on a timer it owns, not because a value
 changed. This means:
 - Static/unchanging values still cost a round trip every poll period.
@@ -42,7 +42,7 @@ changed. This means:
   server.
 
 **Implication for Solaris**: if Solaris ever grows a client/server split (a natural fit for
-"server owns the hardware link, multiple viewers attach," per `cosmos-overview.md`'s functional
+"server owns the hardware link, multiple viewers attach," per `overview.md`'s functional
 model), prefer a subscribe-and-get-pushed-to design for the transport — a change-notification
 stream per subscribed item/packet, not a per-widget timer. This is cheap to get right early and
 expensive to retrofit later; COSMOS v5 (below) still didn't fully solve this at the API layer,
@@ -64,8 +64,8 @@ into a widget's third argument.
 
 ## 4. Binary logs are append-only and not seekable
 
-`cosmos-architecture.md` already notes logs must be parsed from the start because packets are
-variable-length with no index. The API's replay engine (`cosmos-api.md`) fakes seekability
+`architecture.md` already notes logs must be parsed from the start because packets are
+variable-length with no index. The API's replay engine (`api.md`) fakes seekability
 (`replay_move_index`) on top of that by doing the linear scan internally — meaning "jump to
 timestamp X" in the tooling is still O(n) in log size under the hood, just hidden from the
 caller.
@@ -82,7 +82,7 @@ the host language, loaded and run in-process) at a real perf and robustness cost
 - Custom interfaces are required to guard their own I/O because the server runs with
   `Thread.abort_on_exception = true` — an uncaught exception in *any* one interface's thread can
   kill the whole CmdTlmServer process, including every other target's live connection
-  (`cosmos-architecture.md`). That's a single-process blast radius problem: one badly-behaved
+  (`architecture.md`). That's a single-process blast radius problem: one badly-behaved
   target's interface code can take down monitoring for every other target.
 - COSMOS shipped C extensions for hot paths (`BallAerospace/COSMOS` issue #223 references
   "Ruby C Extensions" specifically for packet handling, needing GC-safety fixes) — i.e. pure
@@ -123,5 +123,5 @@ independent lifecycles," not "adopt nine Docker services."
 - [OpenC3 COSMOS Architecture](https://docs.openc3.com/docs/getting-started/architecture)
 - [Upgrading (v4 → v5, OpenC3 docs)](https://docs.openc3.com/docs/getting-started/upgrading)
 - [C Extension Improvements, BallAerospace/COSMOS#223](https://github.com/BallAerospace/COSMOS/issues/223)
-- `cosmos-architecture.md`, `cosmos-api.md`, `cosmos-screens.md` in this repo (for the v4 facts
+- `architecture.md`, `api.md`, `screens.md` in this repo (for the v4 facts
   referenced above)
