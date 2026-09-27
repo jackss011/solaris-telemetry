@@ -126,6 +126,7 @@ Slot-grid procedures, all in the `SLOTS` section of `main.odin`:
 | `slots_panel_move_h`/`_v(slots, panel_idx, dir)` | Moves the panel's tile one slot along one axis by `sign(dir)`, refusing (leaving state untouched) if that goes out of bounds |
 | `slots_panel_expand_up`/`_dw`/`_lx`/`_rx(slots, panel_idx, dir)` | Moves one edge one slot — outward (grow) for `dir > 0`, inward (shrink) for `dir < 0` — keeping the opposite edge fixed |
 | `slots_panel_try_resize(slots, panel_idx, candidate)` | Shared check behind the expand procs: commits only if the tile stays in bounds and within `min_size`/`max_size` |
+| `slots_update_drag(slots, mouse, slot_px)` | Advances the active drag (if any) one step toward the mouse — see "Drag / edit mode" |
 
 Note the sign convention differs between the two families: `move_*` take a *screen* direction
 (`dir < 0` = up/left), while `expand_*` take *outward vs. inward* for that edge — so
@@ -143,16 +144,21 @@ DragOperation :: struct {
     panel_idx:   int,
     mouse_start: [2]f32,     // mouse position when the drag began
     tile_start:  Tile,       // the panel's tile when the drag began
-    optype:      DragType,   // Move, or one of the four Resize* corners
+    optype:      DragType,   // Move or Resize
+    edges:       bit_set[Edge], // for Resize: which edges follow the mouse ({.Up, .Lx} = top-left corner)
 }
 ```
 
-`draw_drag_handle(slots, optype, rect, panel_idx)` both draws a handle and, if it's clicked this
-frame, starts a drag on it. Things about this that are easy to get wrong (several were bugs at some
+`draw_drag_handle(slots, optype, edges, rect, panel_idx)` both draws a handle and, if it's clicked
+this frame, starts a drag on it; `slots_update_drag(slots, mouse, slot_px)` then advances the
+active drag once per frame. A corner handle is just `.Resize` with two edges, so a side handle
+(e.g. `{.Rx}` alone) would need only one more `draw_drag_handle` call and no new update code.
+Move is deliberately *not* "all four edges": edges are stepped and validated one at a time, so
+against a grid edge the far side would keep going and the panel would shrink instead of stopping. Things about this that are easy to get wrong (several were bugs at some
 point during development, which is why they're called out here):
 
 - **`tile_start` exists to prevent drift.** Each frame recomputes the *total* slot-space delta since
-  the drag started (`(mouse - mouse_start) / SLOT_PX`, truncated to whole slots) and computes each
+  the drag started (`(mouse - mouse_start) / slot_px`, rounded to the nearest whole slot, so it snaps at half a slot) and computes each
   edge's *target* from `tile_start`, not from the tile's current (already-moved) position. Each
   edge then steps one slot per frame toward its target. Computing the delta against the current
   position instead would double-apply movement and make the panel run away from the cursor.
@@ -180,8 +186,8 @@ Per-frame, in order:
    (occupied slots and slots too close to the grid edge don't respond to hover/click at all).
    `draw_slots` returns the clicked slot, and `main` adds a `NEW_PANEL_SLOTS_W × NEW_PANEL_SLOTS_H`
    panel there (size range: 2 slots up to the full grid).
-4. **Drag update** (only if `edit_mode` and a drag is active): moves or resizes the dragged
-   panel's tile as described above.
+4. **Drag update** (only if `edit_mode`): `slots_update_drag` moves or resizes the dragged
+   panel's tile as described above (it's a no-op when no drag is active).
 5. **Panel pass**: every panel, in iterator order, is drawn by `draw_panel` as a filled rounded
    shape with a crisp border, sharing one `roundness`/`PANEL_SEGMENTS`. A three-ring outer-glow
    effect (repeated `rect_inset` with a negative amount) is present but commented out.
@@ -215,8 +221,9 @@ assigns it at startup and every `draw_*` proc reads it directly.
   and the telemetry it displays are meant to live on `Panel`, never on `Tile`.
 - `rect_end` is unused.
 - **Test coverage is thin on the UI side.** `src/main_test.odin` covers the parser layers and the
-  `slots_panel_expand_*` resize procs (grow/shrink per edge, grid bounds, size range); the rest of
-  `Slots` (iterator order, move, placement) and all drag/render logic in `main` are untested. That
+  `slots_panel_expand_*` resize procs (grow/shrink per edge, grid bounds, size range) and
+  `slots_update_drag` (half-slot snapping, stepping without drift, corner resize, min size); the
+  iterator order, placement, handle hit-testing and all render code are untested. That
   matters here because this code has already had several real bugs (index/position drift,
   mid-iteration array mutation, unsigned underflow from an earlier `u32`-based tile type) caught
   only by manual play-testing.

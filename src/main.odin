@@ -431,10 +431,14 @@ rect_corner_roundness :: proc(r: Rect, radius: f32) -> f32 {
 
 DragType :: enum {
     Move,
-    ResizeUpLeft,
-    ResizeUpRight,
-    ResizeDownLeft,
-    ResizeDownRight,
+    Resize,
+}
+
+Edge :: enum {
+    Up,
+    Dw,
+    Lx,
+    Rx,
 }
 
 DragOperation :: struct {
@@ -443,6 +447,7 @@ DragOperation :: struct {
     mouse_start: [2]f32,
     tile_start: Tile,
     optype: DragType,
+    edges: bit_set[Edge], // for Resize: which edges follow the mouse, e.g. {.Up, .Lx} = top-left corner
 }
 
 /* ::::::::::::::::::::::::::: SLOTS ::::::::::::::::::::::::::: */
@@ -636,6 +641,36 @@ slots_panel_expand_rx :: proc(slots: ^Slots, panel_idx: int, dir: int) -> bool {
     return slots_panel_try_resize(slots, panel_idx, candidate)
 }
 
+// Advances the active drag (if any) toward the mouse. The target is always computed from where
+// the drag started (tile_start/mouse_start), never from the current tile, so the panel can't
+// drift; the mouse offset snaps to the nearest whole slot. Each edge then steps at most one slot
+// per call toward its target - a refused step (grid edge, size range) just leaves it where it is.
+slots_update_drag :: proc(slots: ^Slots, mouse: [2]f32, slot_px: f32) {
+    op := slots.drag_op
+    if !op.active {
+        return
+    }
+
+    i := op.panel_idx
+    cur := slots.panels[i].tile
+    start := op.tile_start
+    delta_drag := (mouse - op.mouse_start) / slot_px
+    delta := [2]int{int(math.round(delta_drag.x)), int(math.round(delta_drag.y))}
+
+    switch op.optype {
+    case .Move:
+        slots_panel_move_h(slots, i, start.x + delta.x - cur.x)
+        slots_panel_move_v(slots, i, start.y + delta.y - cur.y)
+    case .Resize:
+        // signed distance (in slots) each edge still has to travel to reach its target -
+        // positive means outward, matching the expand procs' dir
+        if .Up in op.edges { slots_panel_expand_up(slots, i, cur.y - (start.y + delta.y)) }
+        if .Dw in op.edges { slots_panel_expand_dw(slots, i, (start.y + start.h + delta.y) - (cur.y + cur.h)) }
+        if .Lx in op.edges { slots_panel_expand_lx(slots, i, cur.x - (start.x + delta.x)) }
+        if .Rx in op.edges { slots_panel_expand_rx(slots, i, (start.x + start.w + delta.x) - (cur.x + cur.w)) }
+    }
+}
+
 
 
 /* ::::::::::::::::::::::::::: RENDER ::::::::::::::::::::::::::: */
@@ -656,19 +691,22 @@ NEW_PANEL_SLOTS_H :: 4
 // order (raised last), so if several overlap under the click the last one drawn (the frontmost)
 // overwrites drag_op and wins. The caller raises drag_op.panel_idx after the loop, so the
 // iteration order stays stable while it's running.
-draw_drag_handle :: proc(slots: ^Slots, optype: DragType, r: Rect, panel_idx: int) {
+// edges is only meaningful for .Resize - pass {} for .Move.
+draw_drag_handle :: proc(slots: ^Slots, optype: DragType, edges: bit_set[Edge], r: Rect, panel_idx: int) {
     mouse := rl.GetMousePosition()
 
     // should we enter moving?
     if rect_contains(r, mouse) && rl.IsMouseButtonPressed(rl.MouseButton.LEFT) {
         slots.drag_op.active = true
         slots.drag_op.optype = optype
+        slots.drag_op.edges = edges
         slots.drag_op.panel_idx = panel_idx
         slots.drag_op.mouse_start = mouse
         slots.drag_op.tile_start = slots.panels[panel_idx].tile
     }
 
-    is_me_active := slots.drag_op.active && slots.drag_op.optype == optype && slots.drag_op.panel_idx == panel_idx
+    op := slots.drag_op
+    is_me_active := op.active && op.optype == optype && op.edges == edges && op.panel_idx == panel_idx
 
     rl.DrawRectangleRounded(
         rect_to_rl(r),
@@ -688,32 +726,34 @@ draw_slots :: proc(slots: Slots, origin: Rect, edit_mode: bool) -> (clicked: boo
             x, y := f32(iw*SLOT_PX)+origin.x, f32(ih*SLOT_PX)+origin.y
             r := Rect{x, y, f32(SLOT_PX), f32(SLOT_PX)}
             r1 := rect_inset(r, 8.0)
-            hovered := rect_contains(r, mouse) &&
-                slots_can_place_panel(slots, iw, ih, NEW_PANEL_SLOTS_W, NEW_PANEL_SLOTS_H)
 
-            if hovered && rl.IsMouseButtonPressed(rl.MouseButton.LEFT) {
-                clicked = true
-                clicked_slot = {iw, ih}
-            }
+            can_add := edit_mode &&
+                rect_contains(r, mouse) &&
+                slots_can_place_panel(slots, iw, ih, NEW_PANEL_SLOTS_W, NEW_PANEL_SLOTS_H)
 
             rl.DrawRectangleRounded(
                 rect_to_rl(r1),
                 rect_corner_roundness(r1, CORNER_RADIUS),
                 16,   // segments
-                hovered ? rl.Color{45, 40, 40, 255} : rl.Color{30, 26, 26, 255}, // fill, translucent
+                can_add ? rl.Color{45, 40, 40, 255} : rl.Color{30, 26, 26, 255}, // fill, translucent
             )
 
-            if hovered && edit_mode {
+            if can_add {
                 text_size := rl.MeasureTextEx(ui_font, "add", 20, 1)
                 text_pos := rl.Vector2{
                     r.x + r.w/2 - text_size.x/2,
                     r.y + r.h/2 - text_size.y/2,
                 }
                 rl.DrawTextEx(ui_font, "add", text_pos, 20, 1, rl.Color{200, 210, 220, 255})
+
+                if rl.IsMouseButtonPressed(rl.MouseButton.LEFT) {
+                    clicked = true
+                    clicked_slot = {iw, ih}
+                }
             }
         }
     }
-    return
+    return;
 }
 
 // Draws the status bar along the bottom of window: the "EDIT" badge on the left while in edit
@@ -814,13 +854,11 @@ main :: proc() {
             slots.drag_op = DragOperation{}
         }
 
-        // RENDER: status bar
+        // STATUS BAR
         draw_status_bar(window, edit_mode)
 
-        // RENDER: bg slots
+        // SLOT PLACEHOLDERS
         clicked, clicked_slot := draw_slots(slots, slots_rect, edit_mode)
-
-        // UPDATE: new panel
         if clicked {
             new_panel := Panel{
                 tile     = Tile{clicked_slot.x, clicked_slot.y, NEW_PANEL_SLOTS_W, NEW_PANEL_SLOTS_H},
@@ -832,49 +870,17 @@ main :: proc() {
             }
         }
 
-        // UPDATE: panels position if dragging
-        if edit_mode && slots.drag_op.active {
-            i := slots.drag_op.panel_idx
-            cur := slots.panels[i].tile
-            start := slots.drag_op.tile_start
-            delta_drag := (mouse - slots.drag_op.mouse_start) / [2]f32{SLOT_PX, SLOT_PX}
-            delta_slots := [2]int{int(delta_drag.x), int(delta_drag.y)}
-
-            // signed distance (in slots) each edge still has to travel to reach its target -
-            // for expand_up/_lx positive means outward, i.e. up/left on screen
-            to_up := cur.y - (start.y + delta_slots.y)
-            to_dw := (start.y + start.h + delta_slots.y) - (cur.y + cur.h)
-            to_lx := cur.x - (start.x + delta_slots.x)
-            to_rx := (start.x + start.w + delta_slots.x) - (cur.x + cur.w)
-
-            switch slots.drag_op.optype {
-            case .Move:
-                slots_panel_move_h(&slots, i, start.x + delta_slots.x - cur.x)
-                slots_panel_move_v(&slots, i, start.y + delta_slots.y - cur.y)
-            case .ResizeUpLeft:
-                slots_panel_expand_up(&slots, i, to_up)
-                slots_panel_expand_lx(&slots, i, to_lx)
-            case .ResizeUpRight:
-                slots_panel_expand_up(&slots, i, to_up)
-                slots_panel_expand_rx(&slots, i, to_rx)
-            case .ResizeDownLeft:
-                slots_panel_expand_dw(&slots, i, to_dw)
-                slots_panel_expand_lx(&slots, i, to_lx)
-            case .ResizeDownRight:
-                slots_panel_expand_dw(&slots, i, to_dw)
-                slots_panel_expand_rx(&slots, i, to_rx)
-            }
-        }
-
-        // RENDER: panels
+        // PANELS
         panels_it := slots_panels(&slots)
         for p in slots_panels_next(&panels_it) {
             panel_rect := tile_to_rect(p.tile, f32(SLOT_PX), [2]f32{slots_rect.x, slots_rect.y})
             draw_panel(panel_rect)
         }
 
-        // RENDER: panels move/resize handles if edit mode
+        // EDIT MODE
         if edit_mode {
+            slots_update_drag(&slots, mouse, SLOT_PX)
+
             draw_edit_shadow(slots_rect)
 
             // draw drag widgets, in the same order as the panels
@@ -884,15 +890,15 @@ main :: proc() {
 
                 // central move handle
                 move_handle_rect := rect_centered(panel_rect, {panel_rect.w*0.6, 32})
-                draw_drag_handle(&slots, DragType.Move, move_handle_rect, i)
+                draw_drag_handle(&slots, .Move, {}, move_handle_rect, i)
 
                 // corner handles sit just inside the visible (inset) panel
                 corners_rect := rect_inset(panel_rect, 16)
                 resize_size := [2]f32{32, 32}
-                draw_drag_handle(&slots, DragType.ResizeUpLeft,    rect_uplx(corners_rect, resize_size), i)
-                draw_drag_handle(&slots, DragType.ResizeUpRight,   rect_uprx(corners_rect, resize_size), i)
-                draw_drag_handle(&slots, DragType.ResizeDownLeft,  rect_dwlx(corners_rect, resize_size), i)
-                draw_drag_handle(&slots, DragType.ResizeDownRight, rect_dwrx(corners_rect, resize_size), i)
+                draw_drag_handle(&slots, .Resize, {.Up, .Lx}, rect_uplx(corners_rect, resize_size), i)
+                draw_drag_handle(&slots, .Resize, {.Up, .Rx}, rect_uprx(corners_rect, resize_size), i)
+                draw_drag_handle(&slots, .Resize, {.Dw, .Lx}, rect_dwlx(corners_rect, resize_size), i)
+                draw_drag_handle(&slots, .Resize, {.Dw, .Rx}, rect_dwrx(corners_rect, resize_size), i)
             }
 
             // raising just sets an index - done after the loop so the iteration order above

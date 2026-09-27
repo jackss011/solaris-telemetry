@@ -89,7 +89,7 @@ To produce a distributable build (release-optimized, no console window, zipped w
 - `src/main_test.odin` — `core:testing`-based tests, now covering all three parser layers
   (`is_ascii_letter`, `grab_token` across every token type including EOF, `grab_until` for both
   found/not-found, `grab_keyword` including blank/comment-line skipping and EOF), plus the UI's
-  `slots_panel_expand_*` resize procs. Run via the
+  `slots_panel_expand_*` resize procs and `slots_update_drag`. Run via the
   test command in "Build & run" above. This coverage was only possible because
   `grab_token`/`grab_keyword` return structured values instead of printing — keep that pattern
   as the parser grows (see "Known issues" below).
@@ -125,8 +125,9 @@ upstream) worth having open while working here.
   positional params than that will `assert` (crash), not error gracefully. Worth keeping in mind
   if `examples/simple_tlm/tlm.txt` grows lines with long param lists (e.g. multi-segment
   `SEG_POLY_READ_CONVERSION` chains).
-- The raylib UI is **mostly untested** (only the `slots_panel_expand_*` resize procs have
-  tests — the iterator, moves, placement and all drag/render logic in `main` don't), and its
+- The raylib UI is **mostly untested** (only the `slots_panel_expand_*` resize procs and
+  `slots_update_drag` have tests — the iterator, placement, handle hit-testing and all render
+  code don't), and its
   debug prints (`fmt.println`/`fmt.printfln`) go nowhere in the
   packaged `-subsystem:windows` release build (see `package.sh`) since it has no console attached.
   See `docs/solaris-architecture.md`'s "Known gaps" for this and other UI-side loose ends.

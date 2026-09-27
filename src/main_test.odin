@@ -481,3 +481,61 @@ test_slots_panel_expand_refuses_outside_size_range :: proc(t: ^testing.T) {
 	testing.expect(t, !slots_panel_expand_rx(&slots, 0, 1))
 	testing.expect_value(t, slots.panels[0].tile, Tile{2, 2, 3, 3})
 }
+
+// make_resize_test_slots with an active drag on its panel, started with the mouse at (0, 0).
+make_drag_test_slots :: proc(optype: DragType, edges: bit_set[Edge] = {}) -> Slots {
+	slots := make_resize_test_slots()
+	slots.drag_op = DragOperation{
+		active     = true,
+		panel_idx  = 0,
+		tile_start = slots.panels[0].tile,
+		optype     = optype,
+		edges      = edges,
+	}
+	return slots
+}
+
+@(test)
+test_slots_update_drag_inactive_is_noop :: proc(t: ^testing.T) {
+	slots := make_resize_test_slots()
+	slots_update_drag(&slots, {500, 500}, 100)
+	testing.expect_value(t, slots.panels[0].tile, Tile{2, 2, 3, 3})
+}
+
+@(test)
+test_slots_update_drag_move_snaps_at_half_slot :: proc(t: ^testing.T) {
+	slots := make_drag_test_slots(.Move)
+	slots_update_drag(&slots, {40, -40}, 100)
+	testing.expect_value(t, slots.panels[0].tile, Tile{2, 2, 3, 3})
+	slots_update_drag(&slots, {60, -140}, 100)
+	testing.expect_value(t, slots.panels[0].tile, Tile{3, 1, 3, 3})
+}
+
+@(test)
+test_slots_update_drag_move_steps_to_target_without_drift :: proc(t: ^testing.T) {
+	slots := make_drag_test_slots(.Move)
+	slots_update_drag(&slots, {300, 0}, 100)
+	testing.expect_value(t, slots.panels[0].tile, Tile{3, 2, 3, 3})
+	slots_update_drag(&slots, {300, 0}, 100)
+	slots_update_drag(&slots, {300, 0}, 100)
+	testing.expect_value(t, slots.panels[0].tile, Tile{5, 2, 3, 3})
+	// target reached - further calls with the same mouse must not keep moving it
+	slots_update_drag(&slots, {300, 0}, 100)
+	testing.expect_value(t, slots.panels[0].tile, Tile{5, 2, 3, 3})
+}
+
+@(test)
+test_slots_update_drag_resize_corner_keeps_opposite_corner :: proc(t: ^testing.T) {
+	slots := make_drag_test_slots(.Resize, {.Up, .Lx})
+	slots_update_drag(&slots, {-100, -100}, 100)
+	testing.expect_value(t, slots.panels[0].tile, Tile{1, 1, 4, 4})
+}
+
+@(test)
+test_slots_update_drag_resize_stops_at_min_size :: proc(t: ^testing.T) {
+	slots := make_drag_test_slots(.Resize, {.Dw, .Rx})
+	for _ in 0..<5 {
+		slots_update_drag(&slots, {-300, -300}, 100)
+	}
+	testing.expect_value(t, slots.panels[0].tile, Tile{2, 2, 1, 1})
+}
