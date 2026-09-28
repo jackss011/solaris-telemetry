@@ -40,8 +40,8 @@ library, the font, and the systems this project is modeled on or borrows ideas f
 ## Font
 
 - [Share Tech on Google Fonts](https://fonts.google.com/specimen/Share+Tech) — the font used for
-  all UI text (`assets/fonts/ShareTech-Regular.ttf`), loaded via `rl.LoadFontEx` in `main`.
-  Licensed under the SIL Open Font License 1.1 — see `assets/fonts/OFL.txt` (bundled alongside the
+  all UI text (`assets/fonts/ShareTech/ShareTech-Regular.ttf`), loaded via `rl.LoadFontEx` in `main`.
+  Licensed under the SIL Open Font License 1.1 — see `assets/fonts/ShareTech/OFL.txt` (bundled alongside the
   font, as the license requires) for the full terms; the short version is it can be embedded,
   bundled, and used in a commercial product, but not resold by itself, and any *modified* version
   can't keep the "Share Tech" name without permission.

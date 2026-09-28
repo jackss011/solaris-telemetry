@@ -12,7 +12,7 @@ if there's spare time.
   U+E922 maximize, U+E923 restore, U+E8BB close (verified by rendering them). Win10 equivalent is
   `segmdl2.ttf` ("Segoe MDL2 Assets") with the same codepoints — fall back to it if the first
   load fails. Caveat: this is a system font, not something we bundle, so it won't be in
-  `dist/solaris.zip` the way `assets/fonts/ShareTech-Regular.ttf` is — fine on Windows, but not
+  `dist/solaris.zip` the way `assets/fonts/ShareTech/ShareTech-Regular.ttf` is — fine on Windows, but not
   portable if this ever targets Linux/macOS.
 
 ## Telemetry Database

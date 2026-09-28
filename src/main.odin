@@ -677,6 +677,7 @@ slots_update_drag :: proc(slots: ^Slots, mouse: [2]f32, slot_px: f32) {
 
 BACKGROUND_COLOR := rl.Color{15, 15, 20, 255}
 ui_font: rl.Font // loaded in main after InitWindow - raylib can't load fonts before a window exists
+ui_font_14: rl.Font // Departure Mono - its 11px pixel grid is size 14 in raylib (ascent-to-descent height), the only pixel-exact size; 28/42 for 2x/3x
 SLOT_PX :: 100
 SLOTS_INIT_W :: 8
 SLOTS_INIT_H :: 6
@@ -831,9 +832,14 @@ main :: proc() {
     rl.SetWindowIcon(icon)
     rl.UnloadImage(icon)
 
-    ui_font = rl.LoadFontEx("assets/fonts/ShareTech-Regular.ttf", 32, nil, 0);
+    ui_font = rl.LoadFontEx("assets/fonts/ShareTech/ShareTech-Regular.ttf", 32, nil, 0);
     defer rl.UnloadFont(ui_font)
     rl.SetTextureFilter(ui_font.texture, rl.TextureFilter.BILINEAR);
+
+    ui_font_14 = rl.LoadFontEx("assets/fonts/DepartureMono/DepartureMono-Regular.otf", 14, nil, 0);
+    defer rl.UnloadFont(ui_font_14)
+    // drawn only at its native size on whole pixels, so POINT keeps glyphs 1:1 instead of resampling them
+    rl.SetTextureFilter(ui_font_14.texture, rl.TextureFilter.POINT);
 
     slots := Slots{w = SLOTS_INIT_W, h = SLOTS_INIT_H, raised_panel = -1}
     edit_mode := false
@@ -875,6 +881,45 @@ main :: proc() {
         for p in slots_panels_next(&panels_it) {
             panel_rect := tile_to_rect(p.tile, f32(SLOT_PX), [2]f32{slots_rect.x, slots_rect.y})
             draw_panel(panel_rect)
+
+            H :: 28
+            a := rect_inset(panel_rect, 16)
+            a.h = H
+
+            c1 := rl.Color{230, 230, 230, 255}
+            c2 := rl.Color{33, 33, 33, 255}
+            c3 := rl.Color{77, 77, 33, 255}
+
+            rl.DrawRectangleRounded(
+                rect_to_rl(a),
+                rect_corner_roundness(a, CORNER_RADIUS),
+                PANEL_SEGMENTS,
+                c2,
+            )
+
+            rl.DrawRectangleRoundedLinesEx(
+                rect_to_rl(a),
+                rect_corner_roundness(a, CORNER_RADIUS),
+                PANEL_SEGMENTS, 1,
+                c3,
+            )
+
+            title :: "[003,025]HOUSEKEEPING_ADCS_ATT_DET_MONITORING"    
+            title_size := rl.MeasureTextEx(ui_font_14, title, 14, 0)
+            // snapped to whole pixels - a fractional position blurs the glyphs
+            title_pos := rl.Vector2{math.floor(a.x + 10), math.floor(a.y + (a.h - title_size.y)/2)}
+            rl.DrawTextEx(ui_font_14, title, title_pos, 14, 0, c1)
+
+            b := rect_inset(panel_rect, 16)
+            b.y += (H+8)
+            b.h -= (H+8)
+
+            rl.DrawRectangleRoundedLinesEx(
+                rect_to_rl(b),
+                rect_corner_roundness(b, CORNER_RADIUS),
+                PANEL_SEGMENTS, 1,
+                c2,
+            )
         }
 
         // EDIT MODE

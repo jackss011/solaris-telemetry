@@ -44,6 +44,23 @@ CI config and no formatter config in this repo currently. There is a small test 
 mkdir -p build && ./bin/odin/odin.exe test ./src -out:build/solaris_test.exe
 ```
 
+`tools/fontcheck/` is a standalone dev tool (not part of the app) that finds the `LoadFontEx` sizes
+at which a pixel font renders pixel-exactly — raylib sizes fonts by ascent-to-descent height, so
+this is often not the font's advertised size (Departure Mono's "11px" is size 14). Usage is in its
+header comment:
+
+```sh
+./bin/odin/odin.exe run tools/fontcheck -out:build/fontcheck.exe -- <font.ttf|otf> [more fonts...]
+```
+
+`tools/fontshow/` is its interactive companion: a window listing every font under `assets/fonts`
+(including binary Windows `.fnt` bitmap fonts like Cozette, via its own `load_font_winfnt` in
+`tools/fontshow/winfnt.odin` — never pass those to `rl.LoadFont`, which only reads BMFont text
+`.fnt` and crashes the process on them)
+that draws sample text at a chosen size exactly as the app does (plus a 3x zoom), marks the
+pixel-exact sizes, and copies the matching `LoadFontEx` line on Enter:
+`./bin/odin/odin.exe run tools/fontshow -out:build/fontshow.exe`
+
 To produce a distributable build (release-optimized, no console window, zipped with its
 `assets/` alongside it), use `./package.sh` — it writes to `dist/` (also gitignored) rather than
 `build/`. See that script's comments for the exact `odin build` flags (`-o:speed`,
