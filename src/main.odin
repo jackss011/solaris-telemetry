@@ -415,6 +415,27 @@ rect_dwrx :: proc(r: Rect, size: [2]f32) -> Rect {
     return Rect{r.x + r.w - size.x, r.y + r.h - size.y, size.x, size.y}
 }
 
+// Splits r in two: `fixed` is `size` px thick along `edge` (e.g. .Up = a header strip across the
+// top), `rest` is what's left after a `gap` between them. Both are clamped to r, so a size/gap
+// bigger than r gives an empty `rest` rather than a negative one.
+rect_split2 :: proc(r: Rect, edge: Edge, size: f32, gap: f32 = 0) -> (fixed, rest: Rect) {
+    switch edge {
+    case .Up:
+        s := min(size, r.h)
+        return Rect{r.x, r.y, r.w, s}, Rect{r.x, r.y + s + gap, r.w, max(r.h - s - gap, 0)}
+    case .Dw:
+        s := min(size, r.h)
+        return Rect{r.x, r.y, r.w, max(r.h - s - gap, 0)}, Rect{r.x, r.y + r.h - s, r.w, s}
+    case .Lx:
+        s := min(size, r.w)
+        return Rect{r.x, r.y, s, r.h}, Rect{r.x + s + gap, r.y, max(r.w - s - gap, 0), r.h}
+    case .Rx:
+        s := min(size, r.w)
+        return Rect{r.x, r.y, max(r.w - s - gap, 0), r.h}, Rect{r.x + r.w - s, r.y, s, r.h}
+    }
+    return
+}
+
 // rl.DrawRectangleRounded's `roundness` is relative to the rect's shorter side, so the same
 // value produces a different-looking corner radius on differently-sized/shaped rects. This
 // converts a fixed pixel radius into the roundness fraction that reproduces it on rect `r`,
@@ -717,14 +738,14 @@ draw_drag_handle :: proc(slots: ^Slots, optype: DragType, edges: bit_set[Edge], 
     )
 }
 
-// Draws the slot grid with its top-left at origin, highlighting the hovered slot if a new panel
+// Draws the slot grid with its top-left at r_origin, highlighting the hovered slot if a new panel
 // could be placed there. Returns whether such a slot was clicked this frame, and which one.
-draw_slots :: proc(slots: Slots, origin: Rect, edit_mode: bool) -> (clicked: bool, clicked_slot: [2]int) {
+draw_slots :: proc(slots: Slots, r_origin: Rect, edit_mode: bool) -> (clicked: bool, clicked_slot: [2]int) {
     mouse := rl.GetMousePosition()
 
     for iw in 0..<slots.w {
         for ih in 0..<slots.h {
-            x, y := f32(iw*SLOT_PX)+origin.x, f32(ih*SLOT_PX)+origin.y
+            x, y := f32(iw*SLOT_PX)+r_origin.x, f32(ih*SLOT_PX)+r_origin.y
             r := Rect{x, y, f32(SLOT_PX), f32(SLOT_PX)}
             r1 := rect_inset(r, 8.0)
 
@@ -759,16 +780,16 @@ draw_slots :: proc(slots: Slots, origin: Rect, edit_mode: bool) -> (clicked: boo
 
 // Draws the status bar along the bottom of window: the "EDIT" badge on the left while in edit
 // mode, and the "SOLARIS" logo on the right.
-draw_status_bar :: proc(window: Rect, edit_mode: bool) {
+draw_status_bar :: proc(r_window: Rect, edit_mode: bool) {
     label_size := rl.MeasureTextEx(ui_font, "SOLARIS", STATUS_BAR_H, 2)
     label_color := rl.Color{207/3, 210/4, 220/4, 255}
 
     if edit_mode {
-        rl.DrawTextEx(ui_font, "EDIT", rl.Vector2{PAD, window.h - PAD - STATUS_BAR_H + 3}, STATUS_BAR_H, 2, rl.Color{230, 180, 60, 255})
+        rl.DrawTextEx(ui_font, "EDIT", rl.Vector2{PAD, r_window.h - PAD - STATUS_BAR_H + 3}, STATUS_BAR_H, 2, rl.Color{230, 180, 60, 255})
     }
 
     rl.DrawTextEx(ui_font, "SOLARIS",
-        rl.Vector2{window.w - label_size.x - PAD*2, window.h - PAD - STATUS_BAR_H + 3},
+        rl.Vector2{r_window.w - label_size.x - PAD*2, r_window.h - PAD - STATUS_BAR_H + 3},
         STATUS_BAR_H,
         2, label_color)
 }
@@ -842,13 +863,25 @@ draw_textbox :: proc(txt: string, r: Rect, c: rl.Color) {
     }
 }
 
+// Draws a small "v" dropdown chevron centered in r, one pixel at a time so it stays as crisp as
+// the pixel font next to it.
+draw_chevron_down :: proc(r: Rect, c: rl.Color) {
+    W :: 9 // odd, so the two arms meet in a single bottom pixel; the chevron is W/2+1 rows tall
+    x0 := i32(math.round(r.x + (r.w - W)/2))
+    y0 := i32(math.round(r.y + (r.h - (W/2 + 1))/2))
+    for i in i32(0)..=W/2 {
+        rl.DrawRectangle(x0 + i, y0 + i, 1, 1, c)
+        rl.DrawRectangle(x0 + W-1 - i, y0 + i, 1, 1, c)
+    }
+}
+
 main :: proc() {
-    slots_rect := Rect{PAD, PAD, SLOT_PX*SLOTS_INIT_W, SLOT_PX*SLOTS_INIT_H}
-    window_w, window_h := slots_rect.w + PAD*2, slots_rect.h + STATUS_BAR_H + PAD*2
-    window := Rect{0, 0, window_w, window_h}
+    r_slots := Rect{PAD, PAD, SLOT_PX*SLOTS_INIT_W, SLOT_PX*SLOTS_INIT_H}
+    window_w, window_h := r_slots.w + PAD*2, r_slots.h + STATUS_BAR_H + PAD*2
+    r_window := Rect{0, 0, window_w, window_h}
 
     rl.SetConfigFlags({.MSAA_4X_HINT}) // smooths rounded-rect/circle edges - must be set before InitWindow
-    rl.InitWindow(i32(window.w), i32(window.h), "Solaris")
+    rl.InitWindow(i32(r_window.w), i32(r_window.h), "Solaris")
     defer rl.CloseWindow()
     rl.SetTargetFPS(60)
 
@@ -886,10 +919,10 @@ main :: proc() {
         }
 
         // STATUS BAR
-        draw_status_bar(window, edit_mode)
+        draw_status_bar(r_window, edit_mode)
 
         // SLOT PLACEHOLDERS
-        clicked, clicked_slot := draw_slots(slots, slots_rect, edit_mode)
+        clicked, clicked_slot := draw_slots(slots, r_slots, edit_mode)
         if clicked {
             new_panel := Panel{
                 tile     = Tile{clicked_slot.x, clicked_slot.y, NEW_PANEL_SLOTS_W, NEW_PANEL_SLOTS_H},
@@ -904,41 +937,43 @@ main :: proc() {
         // PANELS
         panels_it := slots_panels(&slots)
         for p in slots_panels_next(&panels_it) {
-            panel_rect := tile_to_rect(p.tile, f32(SLOT_PX), [2]f32{slots_rect.x, slots_rect.y})
-            draw_panel(panel_rect)
+            r_panel := tile_to_rect(p.tile, f32(SLOT_PX), [2]f32{r_slots.x, r_slots.y})
+            draw_panel(r_panel)
 
             H :: 28
-            header := rect_inset(panel_rect, 16)
-            header.h = H
+            r_header := rect_inset(r_panel, 16)
+            r_header.h = H
 
             c1 := rl.Color{230, 230, 230, 255}
             c2 := rl.Color{33, 33, 33, 255}
             c3 := rl.Color{77, 77, 33, 255}
 
             rl.DrawRectangleRounded(
-                rect_to_rl(header),
-                rect_corner_roundness(header, CORNER_RADIUS),
+                rect_to_rl(r_header),
+                rect_corner_roundness(r_header, CORNER_RADIUS),
                 PANEL_SEGMENTS,
                 c2,
             )
 
             rl.DrawRectangleRoundedLinesEx(
-                rect_to_rl(header),
-                rect_corner_roundness(header, CORNER_RADIUS),
+                rect_to_rl(r_header),
+                rect_corner_roundness(r_header, CORNER_RADIUS),
                 PANEL_SEGMENTS, 1,
                 c3,
             )
 
-            title :: "[003,025]HOUSEKEEPING_ADCS_ATT_DET_MONITORING"    
-            draw_textbox(title, header, c1)          
+            title :: "[003,025]HOUSEKEEPING_ADCS_ATT_DET_MONITORING"
+            r_name, r_icon := rect_split2(rect_inset(r_header, 8), .Rx, r_header.h, 0)
+            draw_textbox(title, r_name, c1)
+            draw_chevron_down(r_icon, c1)
 
-            b := rect_inset(panel_rect, 16)
-            b.y += (H+8)
-            b.h -= (H+8)
+            r_b := rect_inset(r_panel, 16)
+            r_b.y += (H+8)
+            r_b.h -= (H+8)
 
             rl.DrawRectangleRoundedLinesEx(
-                rect_to_rl(b),
-                rect_corner_roundness(b, CORNER_RADIUS),
+                rect_to_rl(r_b),
+                rect_corner_roundness(r_b, CORNER_RADIUS),
                 PANEL_SEGMENTS, 1,
                 c2,
             )
@@ -948,24 +983,24 @@ main :: proc() {
         if edit_mode {
             slots_update_drag(&slots, mouse, SLOT_PX)
 
-            draw_edit_shadow(slots_rect)
+            draw_edit_shadow(r_slots)
 
             // draw drag widgets, in the same order as the panels
             handles_it := slots_panels(&slots)
             for p, i in slots_panels_next(&handles_it) {
-                panel_rect := tile_to_rect(p.tile, f32(SLOT_PX), [2]f32{slots_rect.x, slots_rect.y})
+                r_panel := tile_to_rect(p.tile, f32(SLOT_PX), [2]f32{r_slots.x, r_slots.y})
 
                 // central move handle
-                move_handle_rect := rect_centered(panel_rect, {panel_rect.w*0.6, 32})
-                draw_drag_handle(&slots, .Move, {}, move_handle_rect, i)
+                r_move_handle := rect_centered(r_panel, {r_panel.w*0.6, 32})
+                draw_drag_handle(&slots, .Move, {}, r_move_handle, i)
 
                 // corner handles sit just inside the visible (inset) panel
-                corners_rect := rect_inset(panel_rect, 16)
+                r_corners := rect_inset(r_panel, 16)
                 resize_size := [2]f32{32, 32}
-                draw_drag_handle(&slots, .Resize, {.Up, .Lx}, rect_uplx(corners_rect, resize_size), i)
-                draw_drag_handle(&slots, .Resize, {.Up, .Rx}, rect_uprx(corners_rect, resize_size), i)
-                draw_drag_handle(&slots, .Resize, {.Dw, .Lx}, rect_dwlx(corners_rect, resize_size), i)
-                draw_drag_handle(&slots, .Resize, {.Dw, .Rx}, rect_dwrx(corners_rect, resize_size), i)
+                draw_drag_handle(&slots, .Resize, {.Up, .Lx}, rect_uplx(r_corners, resize_size), i)
+                draw_drag_handle(&slots, .Resize, {.Up, .Rx}, rect_uprx(r_corners, resize_size), i)
+                draw_drag_handle(&slots, .Resize, {.Dw, .Lx}, rect_dwlx(r_corners, resize_size), i)
+                draw_drag_handle(&slots, .Resize, {.Dw, .Rx}, rect_dwrx(r_corners, resize_size), i)
             }
 
             // raising just sets an index - done after the loop so the iteration order above

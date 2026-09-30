@@ -539,3 +539,31 @@ test_slots_update_drag_resize_stops_at_min_size :: proc(t: ^testing.T) {
 	}
 	testing.expect_value(t, slots.panels[0].tile, Tile{2, 2, 1, 1})
 }
+
+@(test)
+test_rect_split2_each_edge :: proc(t: ^testing.T) {
+	r := Rect{10, 20, 100, 50}
+
+	fixed, rest := rect_split2(r, .Up, 12, 4)
+	testing.expect_value(t, fixed, Rect{10, 20, 100, 12})
+	testing.expect_value(t, rest, Rect{10, 36, 100, 34})
+
+	fixed, rest = rect_split2(r, .Dw, 12, 4)
+	testing.expect_value(t, fixed, Rect{10, 58, 100, 12})
+	testing.expect_value(t, rest, Rect{10, 20, 100, 34})
+
+	fixed, rest = rect_split2(r, .Lx, 30)
+	testing.expect_value(t, fixed, Rect{10, 20, 30, 50})
+	testing.expect_value(t, rest, Rect{40, 20, 70, 50})
+
+	fixed, rest = rect_split2(r, .Rx, 30)
+	testing.expect_value(t, fixed, Rect{80, 20, 30, 50})
+	testing.expect_value(t, rest, Rect{10, 20, 70, 50})
+}
+
+@(test)
+test_rect_split2_oversized_clamps :: proc(t: ^testing.T) {
+	fixed, rest := rect_split2(Rect{0, 0, 100, 50}, .Up, 80, 4)
+	testing.expect_value(t, fixed, Rect{0, 0, 100, 50})
+	testing.expect_value(t, rest.h, 0)
+}

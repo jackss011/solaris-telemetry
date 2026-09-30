@@ -78,9 +78,9 @@ exceptions:
 rect_end :: proc(r: Rect) -> (f32, f32) {
     return r.x + r.w, r.y + r.h
 }
-window_w, window_h := rect_end(slots_rect)  // must destructure into separate variables —
+window_w, window_h := rect_end(r_slots)  // must destructure into separate variables —
                                             // Odin does not splat a multi-return call into
-                                            // a composite literal like Rect{0, 0, rect_end(slots_rect)}
+                                            // a composite literal like Rect{0, 0, rect_end(r_slots)}
 ```
 
 Named return values (`-> (keyword: Keyword, next_idx: int)`, as in `grab_keyword`) let you
