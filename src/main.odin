@@ -817,6 +817,31 @@ draw_edit_shadow :: proc(r: Rect) {
     )
 }
 
+draw_textbox :: proc(txt: string, r: Rect, c: rl.Color) {
+    ctxt := strings.clone_to_cstring(txt, context.temp_allocator)
+    txt_size := rl.MeasureTextEx(ui_font_14, ctxt, 14, 0)
+    x := math.round(r.x)
+    y := math.round(r.y + (r.h - txt_size.y) / 2)
+
+    display_len := len(txt)
+    truncated := false
+
+    if txt_size.x > r.w && display_len > 1 {
+        letter_w := txt_size.x/f32(display_len)
+        display_len = clamp(int(r.w / letter_w), 1, display_len) // >= 1 so [display_len-1] stays in bounds
+        ([^]u8)(ctxt)[display_len-1] = 0 // cut the (temp) copy short, not txt - the last slot is the '+' below
+        truncated = true
+    }
+
+    rl.DrawTextEx(ui_font_14, ctxt, rl.Vector2{x, y}, 14, 0, c)
+
+    if truncated {
+        // '+' marks the cut, drawn faded right after the kept text
+        plus_x := x + rl.MeasureTextEx(ui_font_14, ctxt, 14, 0).x
+        rl.DrawTextCodepoint(ui_font_14, '+', rl.Vector2{plus_x, y}, 14, rl.Fade(c, 0.4))
+    }
+}
+
 main :: proc() {
     slots_rect := Rect{PAD, PAD, SLOT_PX*SLOTS_INIT_W, SLOT_PX*SLOTS_INIT_H}
     window_w, window_h := slots_rect.w + PAD*2, slots_rect.h + STATUS_BAR_H + PAD*2
@@ -883,32 +908,29 @@ main :: proc() {
             draw_panel(panel_rect)
 
             H :: 28
-            a := rect_inset(panel_rect, 16)
-            a.h = H
+            header := rect_inset(panel_rect, 16)
+            header.h = H
 
             c1 := rl.Color{230, 230, 230, 255}
             c2 := rl.Color{33, 33, 33, 255}
             c3 := rl.Color{77, 77, 33, 255}
 
             rl.DrawRectangleRounded(
-                rect_to_rl(a),
-                rect_corner_roundness(a, CORNER_RADIUS),
+                rect_to_rl(header),
+                rect_corner_roundness(header, CORNER_RADIUS),
                 PANEL_SEGMENTS,
                 c2,
             )
 
             rl.DrawRectangleRoundedLinesEx(
-                rect_to_rl(a),
-                rect_corner_roundness(a, CORNER_RADIUS),
+                rect_to_rl(header),
+                rect_corner_roundness(header, CORNER_RADIUS),
                 PANEL_SEGMENTS, 1,
                 c3,
             )
 
             title :: "[003,025]HOUSEKEEPING_ADCS_ATT_DET_MONITORING"    
-            title_size := rl.MeasureTextEx(ui_font_14, title, 14, 0)
-            // snapped to whole pixels - a fractional position blurs the glyphs
-            title_pos := rl.Vector2{math.floor(a.x + 10), math.floor(a.y + (a.h - title_size.y)/2)}
-            rl.DrawTextEx(ui_font_14, title, title_pos, 14, 0, c1)
+            draw_textbox(title, header, c1)          
 
             b := rect_inset(panel_rect, 16)
             b.y += (H+8)
