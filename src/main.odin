@@ -838,11 +838,13 @@ draw_edit_shadow :: proc(r: Rect) {
     )
 }
 
-draw_textbox :: proc(txt: string, r: Rect, c: rl.Color) {
+// Draws txt inside r, vertically centered and snapped to edge (.Lx = left-aligned, .Rx =
+// right-aligned). Text too wide for r is cut on the other side, with a faded '+' marking the cut:
+// .Lx keeps the start ("HOUSEKEEPING_AD+"), .Rx keeps the end ("+ADCS_ATT_DET_MONITORING").
+draw_textbox :: proc(txt: string, r: Rect, edge: Edge, c: rl.Color) {
+    assert(edge == .Lx || edge == .Rx, "draw_textbox only snaps to .Lx or .Rx")
     ctxt := strings.clone_to_cstring(txt, context.temp_allocator)
     txt_size := rl.MeasureTextEx(ui_font_14, ctxt, 14, 0)
-    x := math.round(r.x)
-    y := math.round(r.y + (r.h - txt_size.y) / 2)
 
     display_len := len(txt)
     truncated := false
@@ -850,15 +852,29 @@ draw_textbox :: proc(txt: string, r: Rect, c: rl.Color) {
     if txt_size.x > r.w && display_len > 1 {
         letter_w := txt_size.x/f32(display_len)
         display_len = clamp(int(r.w / letter_w), 1, display_len) // >= 1 so [display_len-1] stays in bounds
-        ([^]u8)(ctxt)[display_len-1] = 0 // cut the (temp) copy short, not txt - the last slot is the '+' below
+        // cut the (temp) copy, not txt - one of the display_len slots is the '+' below
+        if edge == .Lx {
+            ([^]u8)(ctxt)[display_len-1] = 0 // keep the start
+        } else {
+            ctxt = cstring(([^]u8)(ctxt)[len(txt) - (display_len-1):]) // keep the end
+        }
         truncated = true
     }
 
-    rl.DrawTextEx(ui_font_14, ctxt, rl.Vector2{x, y}, 14, 0, c)
+    kept_w := rl.MeasureTextEx(ui_font_14, ctxt, 14, 0).x
+    plus_w := truncated ? rl.MeasureTextEx(ui_font_14, "+", 14, 0).x : 0
+
+    x := edge == .Lx ? r.x : r.x + r.w - (kept_w + plus_w) // .Rx: whole drawn width sits flush right
+    y := r.y + (r.h - txt_size.y) / 2
+    x, y = math.round(x), math.round(y)
+
+    // the '+' goes on the cut side: after the kept text for .Lx, before it for .Rx
+    text_x, plus_x := x, x + kept_w
+    if edge == .Rx do text_x, plus_x = x + plus_w, x
+
+    rl.DrawTextEx(ui_font_14, ctxt, rl.Vector2{text_x, y}, 14, 0, c)
 
     if truncated {
-        // '+' marks the cut, drawn faded right after the kept text
-        plus_x := x + rl.MeasureTextEx(ui_font_14, ctxt, 14, 0).x
         rl.DrawTextCodepoint(ui_font_14, '+', rl.Vector2{plus_x, y}, 14, rl.Fade(c, 0.4))
     }
 }
@@ -875,16 +891,20 @@ draw_chevron_down :: proc(r: Rect, c: rl.Color) {
     }
 }
 
+
 main :: proc() {
+    // initial rects
     r_slots := Rect{PAD, PAD, SLOT_PX*SLOTS_INIT_W, SLOT_PX*SLOTS_INIT_H}
     window_w, window_h := r_slots.w + PAD*2, r_slots.h + STATUS_BAR_H + PAD*2
     r_window := Rect{0, 0, window_w, window_h}
 
+    // UI: init
     rl.SetConfigFlags({.MSAA_4X_HINT}) // smooths rounded-rect/circle edges - must be set before InitWindow
     rl.InitWindow(i32(r_window.w), i32(r_window.h), "Solaris")
     defer rl.CloseWindow()
     rl.SetTargetFPS(60)
 
+    // UI: load
     icon := rl.LoadImage("assets/solaris.png")
     rl.ImageFormat(&icon, rl.PixelFormat.UNCOMPRESSED_R8G8B8A8) // GLFW requires RGBA8 for a window icon
     rl.SetWindowIcon(icon)
@@ -899,9 +919,11 @@ main :: proc() {
     // drawn only at its native size on whole pixels, so POINT keeps glyphs 1:1 instead of resampling them
     rl.SetTextureFilter(ui_font_14.texture, rl.TextureFilter.POINT);
 
+    // global state
     slots := Slots{w = SLOTS_INIT_W, h = SLOTS_INIT_H, raised_panel = -1}
     edit_mode := false
 
+    // UI: loop
     for !rl.WindowShouldClose() {
         // beign
         rl.BeginDrawing()
@@ -964,7 +986,7 @@ main :: proc() {
 
             title :: "[003,025]HOUSEKEEPING_ADCS_ATT_DET_MONITORING"
             r_name, r_icon := rect_split2(rect_inset(r_header, 8), .Rx, r_header.h, 0)
-            draw_textbox(title, r_name, c1)
+            draw_textbox(title, r_name, .Lx, c1)
             draw_chevron_down(r_icon, c1)
 
             r_b := rect_inset(r_panel, 16)
