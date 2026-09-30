@@ -1019,8 +1019,18 @@ main :: proc() {
                 PANEL_SEGMENTS, 1,
                 c3,
             )
+            
+            line_x := math.floor(r_body.x + r_body.w * 0.66)
+            r_line := rect_inset(r_body, 16)
+            rl.DrawRectangleRec(rect_to_rl(Rect{line_x, math.round(r_line.y), 1, math.round(r_line.h)}), c3)
 
-            rl
+            ITEM_H:: 32
+            r_item := rect_edge_shift(r_body, .Dw, -(r_body.h-ITEM_H))
+            LINE_PAD :: 4
+            value_w := r_item.x + r_item.w - (line_x + 1 + LINE_PAD)
+            r_item_name, r_item_value := rect_split2(r_item, .Rx, value_w, 1 + 2*LINE_PAD)
+            draw_textbox("ADCS_WORLD_POSITION_WRT_ECI1", r_item_name, .Rx, c1)
+
         }
 
         // EDIT MODE
