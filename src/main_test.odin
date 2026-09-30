@@ -548,7 +548,8 @@ test_rect_split2_each_edge :: proc(t: ^testing.T) {
 	testing.expect_value(t, fixed, Rect{10, 20, 100, 12})
 	testing.expect_value(t, rest, Rect{10, 36, 100, 34})
 
-	fixed, rest = rect_split2(r, .Dw, 12, 4)
+	// .Dw/.Rx put the fixed part second - results are in on-screen order
+	rest, fixed = rect_split2(r, .Dw, 12, 4)
 	testing.expect_value(t, fixed, Rect{10, 58, 100, 12})
 	testing.expect_value(t, rest, Rect{10, 20, 100, 34})
 
@@ -556,7 +557,7 @@ test_rect_split2_each_edge :: proc(t: ^testing.T) {
 	testing.expect_value(t, fixed, Rect{10, 20, 30, 50})
 	testing.expect_value(t, rest, Rect{40, 20, 70, 50})
 
-	fixed, rest = rect_split2(r, .Rx, 30)
+	rest, fixed = rect_split2(r, .Rx, 30)
 	testing.expect_value(t, fixed, Rect{80, 20, 30, 50})
 	testing.expect_value(t, rest, Rect{10, 20, 70, 50})
 }
@@ -566,4 +567,25 @@ test_rect_split2_oversized_clamps :: proc(t: ^testing.T) {
 	fixed, rest := rect_split2(Rect{0, 0, 100, 50}, .Up, 80, 4)
 	testing.expect_value(t, fixed, Rect{0, 0, 100, 50})
 	testing.expect_value(t, rest.h, 0)
+}
+
+@(test)
+test_rect_edge_shift_each_edge :: proc(t: ^testing.T) {
+	r := Rect{10, 20, 100, 50}
+	testing.expect_value(t, rect_edge_shift(r, .Up, 5), Rect{10, 15, 100, 55})
+	testing.expect_value(t, rect_edge_shift(r, .Dw, 5), Rect{10, 20, 100, 55})
+	testing.expect_value(t, rect_edge_shift(r, .Lx, 5), Rect{5, 20, 105, 50})
+	testing.expect_value(t, rect_edge_shift(r, .Rx, 5), Rect{10, 20, 105, 50})
+	// negative pulls the edge inward
+	testing.expect_value(t, rect_edge_shift(r, .Lx, -5), Rect{15, 20, 95, 50})
+	testing.expect_value(t, rect_edge_shift(r, .Up, -5), Rect{10, 25, 100, 45})
+}
+
+@(test)
+test_rect_edge_shift_inward_stops_at_zero :: proc(t: ^testing.T) {
+	r := Rect{10, 20, 100, 50}
+	testing.expect_value(t, rect_edge_shift(r, .Rx, -500), Rect{10, 20, 0, 50})
+	testing.expect_value(t, rect_edge_shift(r, .Lx, -500), Rect{110, 20, 0, 50})
+	testing.expect_value(t, rect_edge_shift(r, .Up, -500), Rect{10, 70, 100, 0})
+	testing.expect_value(t, rect_edge_shift(r, .Dw, -500), Rect{10, 20, 100, 0})
 }

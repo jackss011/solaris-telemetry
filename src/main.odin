@@ -415,6 +415,24 @@ rect_dwrx :: proc(r: Rect, size: [2]f32) -> Rect {
     return Rect{r.x + r.w - size.x, r.y + r.h - size.y, size.x, size.y}
 }
 
+// Moves one edge of r by amount px, leaving the other three in place: positive pushes that edge
+// outward (r grows), negative pulls it inward (r shrinks, not below zero size).
+rect_edge_shift :: proc(r: Rect, edge: Edge, amount: f32) -> Rect {
+    switch edge {
+    case .Up:
+        d := max(amount, -r.h)
+        return Rect{r.x, r.y - d, r.w, r.h + d}
+    case .Dw:
+        return Rect{r.x, r.y, r.w, max(r.h + amount, 0)}
+    case .Lx:
+        d := max(amount, -r.w)
+        return Rect{r.x - d, r.y, r.w + d, r.h}
+    case .Rx:
+        return Rect{r.x, r.y, max(r.w + amount, 0), r.h}
+    }
+    return r
+}
+
 // Splits r in two: `fixed` is `size` px thick along `edge` (e.g. .Up = a header strip across the
 // top), `rest` is what's left after a `gap` between them. Both are clamped to r, so a size/gap
 // bigger than r gives an empty `rest` rather than a negative one.
@@ -963,8 +981,7 @@ main :: proc() {
             draw_panel(r_panel)
 
             H :: 28
-            r_header := rect_inset(r_panel, 16)
-            r_header.h = H
+            r_header, r_body := rect_split2(rect_inset(r_panel, 16), .Up, H, 4)
 
             c1 := rl.Color{230, 230, 230, 255}
             c2 := rl.Color{33, 33, 33, 255}
@@ -989,16 +1006,21 @@ main :: proc() {
             draw_textbox(title, r_name, .Lx, c1)
             draw_chevron_down(r_icon, c1)
 
-            r_b := rect_inset(r_panel, 16)
-            r_b.y += (H+8)
-            r_b.h -= (H+8)
-
-            rl.DrawRectangleRoundedLinesEx(
-                rect_to_rl(r_b),
-                rect_corner_roundness(r_b, CORNER_RADIUS),
-                PANEL_SEGMENTS, 1,
+            rl.DrawRectangleRounded(
+                rect_to_rl(r_body),
+                rect_corner_roundness(r_body, CORNER_RADIUS),
+                PANEL_SEGMENTS,
                 c2,
             )
+
+            rl.DrawRectangleRoundedLinesEx(
+                rect_to_rl(r_body),
+                rect_corner_roundness(r_body, CORNER_RADIUS),
+                PANEL_SEGMENTS, 1,
+                c3,
+            )
+
+            rl
         }
 
         // EDIT MODE
